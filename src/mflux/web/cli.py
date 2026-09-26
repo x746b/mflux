@@ -92,7 +92,12 @@ def main() -> None:
     # uvicorn.Config sets up its loggers on construction, so the filter goes on afterwards.
     if args.log_level != "debug":
         logging.getLogger("uvicorn.access").addFilter(QuietAccessLog())
-    uvicorn.Server(config).run()
+    try:
+        uvicorn.Server(config).run()
+    except KeyboardInterrupt:
+        # uvicorn shuts down cleanly on Ctrl+C, then re-raises the signal; uvicorn.run()
+        # swallows that final KeyboardInterrupt the same way.
+        pass
 
 
 class QuietAccessLog(logging.Filter):
