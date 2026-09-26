@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Gallery · mflux{% endblock %}
+{% block main_class %}gallery-layout{% endblock %}
+{% block content %}
+<div class="gallery-header">
+  <h1>Gallery</h1>
+  <span id="gallery-count" class="muted"></span>
+</div>
+<div id="gallery-grid" class="gallery-grid"></div>
+<div class="center"><button id="gallery-more" class="ghost" hidden>Load more</button></div>
+<dialog id="viewer" class="viewer">
+  <form method="dialog" class="viewer-close"><button class="ghost small" aria-label="Close">Close</button></form>
+  <img id="viewer-image" alt="">
+  <div class="viewer-side">
+    <p id="viewer-prompt" class="viewer-prompt"></p>
+    <dl id="viewer-meta" class="meta-list"></dl>
+    <div class="actions">
+      <button id="viewer-reuse" class="primary small">Reuse settings</button>
+      <a id="viewer-download" class="button ghost small" download>Download</a>
+      <button id="viewer-delete" class="ghost small danger">Delete</button>
+    </div>
+  </div>
+</dialog>
+{% endblock %}
+{% block scripts %}<script src="/static/gallery.js"></script>{% endblock %}

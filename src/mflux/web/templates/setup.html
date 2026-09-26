@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Set up · mflux{% endblock %}
+{% block main_class %}auth-layout{% endblock %}
+{% block content %}
+<form id="setup-form" class="panel auth-card">
+  <h1>Create an API key</h1>
+  <p class="hint">This server requires a login. Choose a key: at least 12 printable ASCII characters, no spaces. It is stored hashed.</p>
+  <label class="field">
+    <span class="label">API key</span>
+    <input type="password" id="api-key" autocomplete="new-password" required autofocus>
+  </label>
+  <label class="field">
+    <span class="label">Repeat</span>
+    <input type="password" id="api-key-confirm" autocomplete="new-password" required>
+  </label>
+  <button type="submit" class="primary">Save and log in</button>
+  <p id="auth-error" class="error" hidden></p>
+</form>
+{% endblock %}
+{% block scripts %}<script src="/static/auth.js"></script>{% endblock %}

@@ -14,7 +14,7 @@ source-exclude = [
 
 [project]
 name = "mflux"
-version = "0.20.0"
+version = "0.20.0+webui"
 description = "MLX native implementations of state-of-the-art generative image models."
 readme = "README.md"
 keywords = ["flux", "ai", "ml", "transformers", "mlx", "huggingface", "apple-silicon", "diffusers", "qwen", "qwen-image", "seedvr2", "z-image"]
@@ -129,6 +129,16 @@ mflux-upscale-seedvr2 = "mflux.models.seedvr2.cli.seedvr2_upscale:main"
 mflux-lora-library = "mflux.models.common.cli.lora_library:main"
 mflux-info = "mflux.models.common.cli.info:main"
 mflux-completions = "mflux.cli.completions.install:main"
+mflux-web = "mflux.web.cli:main"
+
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.115,<1.0",
+    "itsdangerous>=2.2,<3.0",
+    "jinja2>=3.1,<4.0",
+    "python-multipart>=0.0.18",
+    "uvicorn>=0.30,<1.0",
+]
 
 
 [tool.ruff]

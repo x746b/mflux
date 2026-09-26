@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Log in · mflux{% endblock %}
+{% block main_class %}auth-layout{% endblock %}
+{% block content %}
+<form id="login-form" class="panel auth-card">
+  <h1>Log in</h1>
+  <label class="field">
+    <span class="label">API key</span>
+    <input type="password" id="api-key" autocomplete="current-password" required autofocus>
+  </label>
+  <label class="check"><input type="checkbox" id="remember"> Keep me logged in for 30 days</label>
+  <button type="submit" class="primary">Log in</button>
+  <p id="auth-error" class="error" hidden></p>
+</form>
+{% endblock %}
+{% block scripts %}<script src="/static/auth.js"></script>{% endblock %}

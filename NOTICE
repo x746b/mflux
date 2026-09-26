@@ -1,0 +1,10 @@
+mflux
+Copyright (c) 2026 Filip Strand and mflux contributors. Licensed under the MIT License (see LICENSE).
+
+This product includes software adapted from oMLX (https://github.com/jundot/omlx),
+Copyright oMLX contributors, licensed under the Apache License, Version 2.0:
+
+  src/mflux/web/auth.py  (adapted from omlx/admin/auth.py)
+
+You may obtain a copy of the Apache License, Version 2.0 at
+https://www.apache.org/licenses/LICENSE-2.0

@@ -9,8 +9,73 @@
 
 Run the latest state-of-the-art generative image models locally on your Mac in native MLX!
 
+### Web UI
+
+This fork adds `mflux-web`, a small browser interface for mflux. I made it because I got tired of typing commands like this every time I wanted to try a new prompt:
+
+```sh
+mflux-generate-qwen-2.1 --model ~/AI/models/Qwen_Qwen-Image-2.1 --base-model qwen-image-2.1 \
+  --prompt "A ceramic teapot on a wooden table" --width 1024 --height 1024 --steps 40
+```
+
+Now I pick the model, type the prompt and press Generate. It runs the same code as the CLI: the form is built from each command's own options, and every request goes through the command's own argument parser, so the UI accepts exactly what the CLI accepts. The model also stays loaded between runs. The first image has to wait for the weights to load, the next ones start generating right away.
+
+![Generate page during a run](docs/Screenshot-1.png)
+
+*The generate page during a run. Settings on the left; progress, the result and the equivalent CLI command on the right. "Copy CLI command" gives you that command if you want to script it later.*
+
+![Gallery with an image opened](docs/Screenshot-2.png)
+
+*The gallery. Click an image to see how it was made. "Reuse settings" puts everything, including the seed, back into the form.*
+
+#### Install and run
+
+Install this fork with the `web` extra (this replaces an existing `uv tool` install of mflux):
+
+```sh
+uv tool install --force --python 3.14 "mflux[web] @ git+https://github.com/x746b/mflux@v0.20.0-webui"
+mflux-web --models-dir ~/AI/models --output-dir ~/AI/mflux-web/outputs
+```
+
+and open http://127.0.0.1:8001.
+
+`--models-dir` is the folder where you keep downloaded checkpoints. Each subfolder shows up under Weights → Local folder. Generated images land in `--output-dir`, each with a small JSON file holding its settings; that is what the gallery reads.
+
+#### Good to know
+
+- **Built-in or Local folder.** "Built-in" downloads the model from Hugging Face, which for Qwen Image 2.1 is about 33 GB. If you already have the weights on disk, choose Local folder and set the base model (for example `qwen-image-2.1`).
+- **Sizes.** The small buttons are the usual sizes around 1 megapixel. "More sizes" has wider ratios (16:10, 21:9, 2.39:1, 32:9 and portrait versions), and "Resolution" scales them from 0.5 to 4 MP.
+- **Several images at once.** Put `1, 2, 3` in Seeds and you get three images from one run.
+- **No scrolling to the button.** Generate is also in the top bar, and Cmd/Ctrl+Enter works anywhere in the form.
+- **History.** Recent jobs are kept only in memory and are gone when the server stops. "Clear history" drops them right away, together with uploaded init images. Images in the gallery stay until you delete them there.
+- **Supported models.** Text-to-image, plus image-to-image and LoRAs, for FLUX.1, FLUX.2, Qwen Image, Qwen Image 2.1, Z-Image, Krea 2 and ERNIE-Image. Edit, ControlNet, fill and upscaling are still CLI-only.
+- **Quiet console.** The page polls the server all the time. Those requests are only logged with `--log-level debug`.
+
+#### Using it from another machine
+
+Out of the box `mflux-web` listens only on 127.0.0.1 and has no password, which is fine when you are the only user of your Mac. The simplest way to use it from a laptop is an SSH tunnel, which needs no configuration at all:
+
+```sh
+ssh -L 8001:127.0.0.1:8001 you@your-mac
+# then open http://127.0.0.1:8001 on the laptop
+```
+
+If you do want it on the network, it will not start without an API key. Pass the key through the environment, since command lines are visible to other users on the machine:
+
+```sh
+export MFLUX_WEB_API_KEY='something-long-and-random'
+mflux-web --host 0.0.0.0 --models-dir ~/AI/models
+```
+
+This is plain HTTP, so for anything beyond your home network put TLS in front. With Tailscale that is `tailscale serve --bg 8001`, plus `--allowed-host your-mac.your-tailnet.ts.net --behind-https` for mflux-web. Or use `--tls-cert` / `--tls-key` directly.
+
+Whatever you choose, the UI only reads models from `--models-dir` (and LoRAs from `--lora-dir`) and only writes to `--output-dir`. It cannot be pointed at other files on the machine. `mflux-web --help` lists every option.
+
+---
+
 ### Table of contents
 
+- [Web UI](#web-ui)
 - [💡 Philosophy](#-philosophy)
 - [💿 Installation](#-installation)
 - [🎨 Models](#-models)
