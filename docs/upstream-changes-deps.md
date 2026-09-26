@@ -20,7 +20,7 @@ These paths do not exist upstream, so a merge never conflicts on them:
 | `src/mflux/web/` | The web UI: FastAPI app, auth, job runner, form schema, command adapters, templates, static JS/CSS |
 | `tests/web/` | Tests for the web UI (app, auth, memory, network, paths, runner, schema/invocation, security) |
 | `docs/Screenshot-3.png`, `docs/Screenshot-4.png` | README screenshots |
-| `docs/upfront-changes-deps.md` | This document |
+| `docs/upstream-changes-deps.md` | This document |
 | `NOTICE` | Attribution for `src/mflux/web/auth.py`, adapted from oMLX (Apache-2.0) |
 
 The only risk is upstream adding a file or directory with the same name (for example its own
