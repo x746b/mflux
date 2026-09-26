@@ -21,7 +21,6 @@ These paths do not exist upstream, so a merge never conflicts on them:
 | `tests/web/` | Tests for the web UI (app, auth, memory, network, paths, runner, schema/invocation, security) |
 | `docs/Screenshot-3.png`, `docs/Screenshot-4.png` | README screenshots |
 | `docs/upfront-changes-deps.md` | This document |
-| `.cursor/plans/2026-09-26-mflux-web.md` | Design plan for the web UI |
 | `NOTICE` | Attribution for `src/mflux/web/auth.py`, adapted from oMLX (Apache-2.0) |
 
 The only risk is upstream adding a file or directory with the same name (for example its own
