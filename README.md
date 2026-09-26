@@ -72,6 +72,10 @@ This is plain HTTP, so for anything beyond your home network put TLS in front. W
 
 Whatever you choose, the UI only reads models from `--models-dir` (and LoRAs from `--lora-dir`) and only writes to `--output-dir`. It cannot be pointed at other files on the machine. `mflux-web --help` lists every option.
 
+#### Keeping up with upstream
+
+The web UI lives almost entirely in new files, so merging upstream mflux is mostly painless. [docs/upstream-changes-deps.md](docs/upstream-changes-deps.md) lists the few upstream files this fork changes, which upstream code the UI depends on, and the steps for each sync.
+
 ---
 
 ### Table of contents
