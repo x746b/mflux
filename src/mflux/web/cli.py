@@ -18,6 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--models-dir", type=Path, action="append", default=[], help="Directory whose subdirectories are local model checkpoints. Repeatable.")  # fmt: off
     parser.add_argument("--lora-dir", type=Path, action="append", default=[], help="Directory searched for local .safetensors LoRAs. Repeatable.")  # fmt: off
     parser.add_argument("--cache-size", type=int, default=1, help="How many loaded models to keep in memory between runs (default: 1; 0 reloads every run).")  # fmt: off
+    parser.add_argument("--idle-unload", type=float, default=10, metavar="MINUTES", help="Free the loaded model after this many idle minutes (default: 10; 0 keeps it loaded until another model is needed).")  # fmt: off
     parser.add_argument("--api-key", default=None, help="API key for login. Prefer MFLUX_WEB_API_KEY or --api-key-file: command lines are visible to other local users.")  # fmt: off
     parser.add_argument("--api-key-file", type=Path, default=None, help="Read the API key from this file.")
     parser.add_argument("--require-auth", action="store_true", help="Require login on loopback too. Without a key, the first visit offers to create one.")  # fmt: off
@@ -59,6 +60,7 @@ def main() -> None:
         models_dirs=[d.expanduser().resolve() for d in args.models_dir],
         lora_dirs=[d.expanduser().resolve() for d in args.lora_dir],
         cache_size=args.cache_size,
+        idle_unload_minutes=max(args.idle_unload, 0),
         require_auth=args.require_auth,
         api_key_hash=WebAuth.hash_key(api_key) if api_key else None,
         allowed_hosts=args.allowed_host,
@@ -121,7 +123,13 @@ class WebCli:
         scheme = "https" if settings.tls_certfile else "http"
         shown_host = "127.0.0.1" if settings.host in ("0.0.0.0", "::") else settings.host
         lines = [f"mflux-web: {scheme}://{shown_host}:{settings.port}", f"  outputs: {settings.output_dir}"]
-        lines.extend(f"  models:  {directory}" for directory in settings.models_dirs)
+        unload = (
+            f"after {settings.idle_unload_minutes:g} idle min"
+            if settings.idle_unload_minutes
+            else "only when another model is needed"
+        )
+        lines.append(f"  models:  keep {settings.cache_size} loaded, unload {unload}")
+        lines.extend(f"  from:    {directory}" for directory in settings.models_dirs)
         lines.extend(f"  loras:   {directory}" for directory in settings.lora_dirs)
         if settings.auth_configured or settings.require_auth:
             lines.append("  auth:    login required")

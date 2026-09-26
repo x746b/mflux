@@ -41,7 +41,9 @@ class WebApp:
         self.throttle = LoginThrottle()
         self.guard = PathGuard(settings.output_dir, settings.upload_dir, settings.models_dirs, settings.lora_dirs)
         self.schema = FormSchema()
-        self.runner = runner or JobRunner(cache_size=settings.cache_size)
+        self.runner = runner or JobRunner(
+            cache_size=settings.cache_size, idle_unload_seconds=settings.idle_unload_minutes * 60
+        )
         self.templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
         self.app = self._build()
 
@@ -203,6 +205,10 @@ class WebApp:
         @app.get("/api/status")
         def status():
             return self.runner.status()
+
+        @app.post("/api/models/unload")
+        def unload_models():
+            return {"scheduled": self.runner.request_unload()}
 
         @app.post("/api/uploads")
         async def upload(file: UploadFile):

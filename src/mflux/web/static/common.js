@@ -75,13 +75,31 @@ const MF = (() => {
     if (!pill || document.hidden) return;
     try {
       const status = await api("/api/status");
+      const memory = status.memory || {};
+      const model = status.cached_models.length ? status.cached_models[0].model : null;
       let label = "idle";
       if (status.loading) label = `loading ${status.loading}`;
       else if (status.current_job) label = status.queued ? `busy · ${status.queued} queued` : "busy";
-      else if (status.cached_models.length) label = `ready · ${status.cached_models[0].model}`;
+      else if (model) label = `ready · ${model}`;
+      if (memory.active_gb !== undefined) label += ` · ${memory.active_gb.toFixed(1)} GB`;
       pill.textContent = label;
+      const details = [`MLX memory in use: ${memory.active_gb} GB`, `MLX buffer cache: ${memory.cache_gb} GB`];
+      if (model && status.unload_in !== null) details.push(`Unloads after ${Math.ceil(status.unload_in / 60)} more idle min`);
+      pill.title = details.join("\n");
       pill.classList.toggle("busy", Boolean(status.loading || status.current_job));
+      const unload = document.getElementById("unload-model");
+      if (unload) unload.hidden = !model || Boolean(status.loading || status.current_job);
     } catch { /* the next poll retries */ }
+  }
+
+  async function unloadModel() {
+    try {
+      await api("/api/models/unload", { method: "POST" });
+      toast("Unloading model…");
+      setTimeout(pollStatus, 800);
+    } catch (exc) {
+      toast(exc.message);
+    }
   }
 
   async function init() {
@@ -94,6 +112,8 @@ const MF = (() => {
         window.location.href = "/login";
       });
     }
+    const unload = document.getElementById("unload-model");
+    if (unload) unload.addEventListener("click", unloadModel);
     if (document.getElementById("worker-status") && current.authenticated) {
       pollStatus();
       setInterval(pollStatus, 3000);

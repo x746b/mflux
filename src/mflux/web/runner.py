@@ -139,17 +139,23 @@ class WebProgressCallback:
 
 class JobRunner:
     MAX_JOBS_KEPT = 200
+    # Queue sentinel: model memory may only be touched on the worker thread that owns MLX.
+    UNLOAD = "unload"
+    GB = 1024**3
 
-    def __init__(self, cache_size: int = 1):
+    def __init__(self, cache_size: int = 1, idle_unload_seconds: float = 600):
         self.cache_size = max(cache_size, 0)
+        self.idle_unload_seconds = max(idle_unload_seconds, 0)
         self.current_job: Job | None = None
         self.battery_saver = None
         self._jobs: OrderedDict[str, Job] = OrderedDict()
-        self._queue: "queue.Queue[Job | None]" = queue.Queue()
+        self._queue: "queue.Queue[Job | str | None]" = queue.Queue()
         self._models: OrderedDict[tuple, object] = OrderedDict()
         self._jobs_lock = threading.Lock()
         self._thread = threading.Thread(target=self._work, name="mflux-web-worker", daemon=True)
         self._loading: str | None = None
+        self._last_used = time.monotonic()
+        self._default_cache_limit: int | None = None
 
     def start(self) -> None:
         self._thread.start()
@@ -205,6 +211,12 @@ class JobRunner:
                 uploads.add(str(image["upload"]))
         return uploads
 
+    def request_unload(self) -> bool:
+        if not self._models:
+            return False
+        self._queue.put(JobRunner.UNLOAD)
+        return True
+
     def queue_position(self, job: Job) -> int:
         waiting = [j for j in self.jobs() if j.status == "queued"]
         return waiting.index(job) + 1 if job in waiting else 0
@@ -214,17 +226,42 @@ class JobRunner:
             "current_job": self.current_job.id if self.current_job else None,
             "queued": sum(1 for j in self.jobs() if j.status == "queued"),
             "loading": self._loading,
-            "cached_models": [ModelCacheKey.describe(key) for key in self._models],
+            "cached_models": [ModelCacheKey.describe(key) for key in list(self._models)],
             "cache_size": self.cache_size,
+            "memory": JobRunner.memory_snapshot(),
+            "unload_in": self._seconds_until_idle_unload(),
+        }
+
+    @staticmethod
+    def memory_snapshot() -> dict:
+        import mlx.core as mx
+
+        return {
+            "active_gb": round(mx.get_active_memory() / JobRunner.GB, 2),
+            "cache_gb": round(mx.get_cache_memory() / JobRunner.GB, 2),
+            "peak_gb": round(mx.get_peak_memory() / JobRunner.GB, 2),
         }
 
     def _work(self) -> None:
+        import mlx.core as mx
+
+        # MLX has no getter for the cache limit; read it by setting and restoring it.
+        self._default_cache_limit = mx.set_cache_limit(0)
+        mx.set_cache_limit(self._default_cache_limit)
         while True:
-            job = self._queue.get()
+            try:
+                job = self._queue.get(timeout=self._seconds_until_idle_unload())
+            except queue.Empty:
+                self._unload_all(f"idle for {self.idle_unload_seconds / 60:g} min")
+                continue
             if job is None:
                 return
+            if isinstance(job, str) and job == JobRunner.UNLOAD:
+                self._unload_all("unload requested")
+                continue
             if job.cancel_requested.is_set():
                 continue
+            mx.reset_peak_memory()
             self.current_job = job
             job.status = "running"
             job.started_at = time.time()
@@ -246,6 +283,44 @@ class JobRunner:
                 job.finished_at = time.time()
                 self.current_job = None
                 self.battery_saver = None
+                self._after_job(job)
+
+    def _after_job(self, job: Job) -> None:
+        import mlx.core as mx
+
+        # MLX keeps freed buffers for reuse, by default up to most of the machine's memory.
+        # A long-lived server must hand them back after every job, or each new size or
+        # prompt length leaves more behind and the process looks like it holds two models.
+        if self._default_cache_limit is not None:
+            mx.set_cache_limit(self._default_cache_limit)
+        peak_gb = mx.get_peak_memory() / JobRunner.GB
+        gc.collect()
+        mx.clear_cache()
+        self._last_used = time.monotonic()
+        memory = JobRunner.memory_snapshot()
+        loaded = ", ".join(ModelCacheKey.describe(key)["model"] or key[0] for key in self._models) or "none"
+        logger.info(
+            "Job %s %s in %.1fs · peak %.1f GB · now %.1f GB active · models loaded: %s",
+            job.id,
+            job.status,
+            (job.finished_at or time.time()) - (job.started_at or job.created_at),
+            peak_gb,
+            memory["active_gb"],
+            loaded,
+        )
+
+    def _seconds_until_idle_unload(self) -> float | None:
+        if not self._models or not self.idle_unload_seconds or self.current_job is not None:
+            return None
+        return max(self._last_used + self.idle_unload_seconds - time.monotonic(), 0.01)
+
+    def _unload_all(self, reason: str) -> None:
+        if not self._models:
+            return
+        names = ", ".join(ModelCacheKey.describe(key)["model"] or key[0] for key in self._models)
+        self._models.clear()
+        JobRunner._release_memory()
+        logger.info("Unloaded %s (%s) · now %.1f GB active", names, reason, JobRunner.memory_snapshot()["active_gb"])
 
     def _run(self, job: Job) -> None:
         import mlx.core as mx

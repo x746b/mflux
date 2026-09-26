@@ -14,6 +14,8 @@ from mflux.models.qwen21.model.qwen21_transformer.qwen21_transformer_block impor
 
 
 class Qwen21Transformer(nn.Module):
+    GEOMETRY_CACHE_SIZE = 8
+
     def __init__(
         self,
         in_channels: int = 64,
@@ -113,6 +115,10 @@ class Qwen21Transformer(nn.Module):
     ) -> tuple[mx.array, mx.array, mx.array | None]:
         cache_key = (text_len, latent_height, latent_width)
         if cache_key not in self._geometry_cache:
+            # Bounded: every new prompt length or size adds an entry (with a seq x seq mask when
+            # padded), which a long-lived process such as mflux-web would otherwise keep forever.
+            if len(self._geometry_cache) >= Qwen21Transformer.GEOMETRY_CACHE_SIZE:
+                self._geometry_cache.pop(next(iter(self._geometry_cache)))
             rope_cos, rope_sin = self.pos_embed(text_len, latent_height, latent_width)
             has_padding = (
                 encoder_hidden_states_mask is not None and int(mx.sum(encoder_hidden_states_mask).item()) < text_len

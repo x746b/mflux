@@ -18,6 +18,7 @@ class WebSettings:
     models_dirs: list[Path] = field(default_factory=list)
     lora_dirs: list[Path] = field(default_factory=list)
     cache_size: int = 1
+    idle_unload_minutes: float = 10
     require_auth: bool = False
     api_key_hash: str | None = None
     secret_key: str = ""

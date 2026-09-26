@@ -324,15 +324,18 @@ ADAPTERS: dict[str, CommandAdapter] = {
 class ModelCacheKey:
     @staticmethod
     def of(command: str, args: Namespace) -> tuple:
+        lora_paths = tuple(args.lora_paths or ())
+        # Scales and baking only change the weights when there are LoRAs; keying on them
+        # otherwise reloads an identical model whenever the checkbox is toggled.
         return (
             command,
             args.model,
             args.model_path,
             args.base_model,
             args.quantize,
-            tuple(args.lora_paths or ()),
-            tuple(args.lora_scales or ()),
-            bool(args.bake_lora),
+            lora_paths,
+            tuple(args.lora_scales or ()) if lora_paths else (),
+            bool(args.bake_lora) if lora_paths else None,
         )
 
     @staticmethod

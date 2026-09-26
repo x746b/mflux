@@ -66,7 +66,15 @@ class FakeAdapter:
 
 class FakeInvocation:
     def __init__(
-        self, adapter, output_dir, model="qwen-image-2.1", prompt="teapot", seeds=(1,), steps=3, low_ram=False
+        self,
+        adapter,
+        output_dir,
+        model="qwen-image-2.1",
+        prompt="teapot",
+        seeds=(1,),
+        steps=3,
+        low_ram=False,
+        **overrides,
     ):
         self.command = "mflux-generate-qwen-2.1"
         self.adapter = adapter
@@ -91,6 +99,7 @@ class FakeInvocation:
             output=str(output_dir / "img_{seed}.png"),
             web_messages=["a warning"],
         )
+        self._args.update(overrides)
 
     def parse(self):
         return Namespace(**self._args)

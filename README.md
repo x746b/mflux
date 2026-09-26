@@ -47,6 +47,7 @@ and open http://127.0.0.1:8001.
 - **Sizes.** The small buttons are the usual sizes around 1 megapixel. "More sizes" has wider ratios (16:10, 21:9, 2.39:1, 32:9 and portrait versions), and "Resolution" scales them from 0.5 to 4 MP.
 - **Several images at once.** Put `1, 2, 3` in Seeds and you get three images from one run.
 - **No scrolling to the button.** Generate is also in the top bar, and Cmd/Ctrl+Enter works anywhere in the form.
+- **Memory.** The last model stays loaded so repeat runs are fast, and the top bar shows how much memory it takes. After 10 idle minutes it is unloaded automatically (`--idle-unload MINUTES`, `0` keeps it loaded), and the Unload button frees it right away. Use `--cache-size 0` to unload after every run, like the CLI.
 - **History.** Recent jobs are kept only in memory and are gone when the server stops. "Clear history" drops them right away, together with uploaded init images. Images in the gallery stay until you delete them there.
 - **Supported models.** Text-to-image, plus image-to-image and LoRAs, for FLUX.1, FLUX.2, Qwen Image, Qwen Image 2.1, Z-Image, Krea 2 and ERNIE-Image. Edit, ControlNet, fill and upscaling are still CLI-only.
 - **Quiet console.** The page polls the server all the time. Those requests are only logged with `--log-level debug`.
