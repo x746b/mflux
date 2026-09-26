@@ -20,11 +20,11 @@ mflux-generate-qwen-2.1 --model ~/AI/models/Qwen_Qwen-Image-2.1 --base-model qwe
 
 Now I pick the model, type the prompt and press Generate. It runs the same code as the CLI: the form is built from each command's own options, and every request goes through the command's own argument parser, so the UI accepts exactly what the CLI accepts. The model also stays loaded between runs. The first image has to wait for the weights to load, the next ones start generating right away.
 
-![Generate page during a run](docs/Screenshot-1.png)
+![Generate page after a run](docs/Screenshot-3.png)
 
-*The generate page during a run. Settings on the left; progress, the result and the equivalent CLI command on the right. "Copy CLI command" gives you that command if you want to script it later.*
+*The generate page after a run. Settings on the left; the result and the equivalent CLI command on the right ("Copy CLI command" gives it to you if you want to script it later). The top bar shows which model is loaded and how much memory it takes, with an Unload button next to it.*
 
-![Gallery with an image opened](docs/Screenshot-2.png)
+![Gallery](docs/Screenshot-4.png)
 
 *The gallery. Click an image to see how it was made. "Reuse settings" puts everything, including the seed, back into the form.*
 
