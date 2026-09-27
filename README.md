@@ -40,7 +40,7 @@ mflux-web --models-dir ~/AI/models --output-dir ~/AI/mflux-web/outputs
 #### With LoRA
 
 ```bash
-mflux-web --models-dir ~/AI/models --lora-dir ~/AI/models/Danrisi_filmstills_qwen2.1 --output-dir ~/AI/mflux-web/outputs --max-memory-gb 64 --cache-size 0
+mflux-web --models-dir ~/AI/models --lora-dir ~/AI/models/_LoRAs_ --output-dir ~/AI/mflux-web/outputs --max-memory-gb 96 --cache-size 0
 ```
 
 and open http://127.0.0.1:8001.
