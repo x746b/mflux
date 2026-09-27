@@ -29,7 +29,18 @@ Install this fork with the `web` extra (this replaces an existing `uv tool` inst
 
 ```sh
 uv tool install --force --python 3.14 "mflux[web] @ git+https://github.com/x746b/mflux@v0.20.0-webui"
+```
+
+#### Simple run
+
+```bash
 mflux-web --models-dir ~/AI/models --output-dir ~/AI/mflux-web/outputs
+```
+
+#### With LoRA
+
+```bash
+mflux-web --models-dir ~/AI/models --lora-dir ~/AI/models/Danrisi_filmstills_qwen2.1 --output-dir ~/AI/mflux-web/outputs --max-memory-gb 64 --cache-size 0
 ```
 
 and open http://127.0.0.1:8001.
