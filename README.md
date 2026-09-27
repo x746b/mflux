@@ -27,8 +27,8 @@ This fork adds `mflux-web`, a small browser interface for mflux. I made it becau
 
 Install this fork with the `web` extra (this replaces an existing `uv tool` install of mflux):
 
-```sh
-uv tool install --force --python 3.14 "mflux[web] @ git+https://github.com/x746b/mflux@v0.20.0-webui"
+```bash
+uv tool install --force --refresh --python 3.14 "mflux[web] @ git+https://github.com/x746b/mflux@v0.20.0-webui"
 ```
 
 #### Simple run
