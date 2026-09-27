@@ -5,20 +5,13 @@
 [![CI](https://github.com/filipstrand/mflux/actions/workflows/tests.yml/badge.svg)](https://github.com/filipstrand/mflux/actions/workflows/tests.yml)
 [![Greptile: The War on Bugs](https://www.greptile.com/badge.svg)](https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source)
 
-### About
+# About
 
-Run the latest state-of-the-art generative image models locally on your Mac in native MLX!
+Run the latest state-of-the-art generative image models locally on your Mac in native MLX! This fork adds `mflux-web`, a small browser interface for mflux
 
-### Web UI
+## Web UI
 
-This fork adds `mflux-web`, a small browser interface for mflux. I made it because I got tired of typing commands like this every time I wanted to try a new prompt:
-
-```sh
-mflux-generate-qwen-2.1 --model ~/AI/models/Qwen_Qwen-Image-2.1 --base-model qwen-image-2.1 \
-  --prompt "A ceramic teapot on a wooden table" --width 1024 --height 1024 --steps 40
-```
-
-Now I pick the model, type the prompt and press Generate. It runs the same code as the CLI: the form is built from each command's own options, and every request goes through the command's own argument parser, so the UI accepts exactly what the CLI accepts. The model also stays loaded between runs. The first image has to wait for the weights to load, the next ones start generating right away.
+This fork adds `mflux-web`, a small browser interface for mflux. I made it because I got tired of typing commands like this every time I wanted to try a new prompt. Now I pick the model, type the prompt and press Generate. It runs the same code as the CLI: the form is built from each command's own options, and every request goes through the command's own argument parser, so the UI accepts exactly what the CLI accepts. The model also stays loaded between runs. The first image has to wait for the weights to load, the next ones start generating right away.
 
 ![Generate page after a run](docs/Screenshot-3.png)
 
@@ -28,7 +21,9 @@ Now I pick the model, type the prompt and press Generate. It runs the same code 
 
 *The gallery. Click an image to see how it was made. "Reuse settings" puts everything, including the seed, back into the form.*
 
-#### Install and run
+---
+
+### Install and run
 
 Install this fork with the `web` extra (this replaces an existing `uv tool` install of mflux):
 
@@ -41,7 +36,23 @@ and open http://127.0.0.1:8001.
 
 `--models-dir` is the folder where you keep downloaded checkpoints. Each subfolder shows up under Weights → Local folder. Generated images land in `--output-dir`, each with a small JSON file holding its settings; that is what the gallery reads.
 
-#### Good to know
+---
+
+### News 2026-09-27
+
+WebUI Qwen 2.1 editing adoption and more:
+
+1. Review notes and merge upstream main (PRs 758, 768, 741, 747, 774), preserving fork patches.
+2. Add worker memory budget, lifetime cache cap, step checks and retained-memory eviction; avoid retaining exception tracebacks; version assets and revalidate browser caches.
+3. Add Qwen 2.1 edit adapter and validated ordered reference uploads, preserve uploads across family switches and protect references used by active jobs during history clearing.
+4. Verify fake-model memory regressions, adapter/CLI parity, Python 3.14 help and web tests, relevant upstream tests, browser upload/cache behavior, and built-wheel server startup.
+5. Update documentation, commit phases, push main and update v0.20.0-webui for existing reinstall command.
+
+![Qwen 2.1 editing adoption](docs/Screenshot-5.png)
+
+---
+
+### Good to know
 
 - **Built-in or Local folder.** "Built-in" downloads the model from Hugging Face, which for Qwen Image 2.1 is about 33 GB. If you already have the weights on disk, choose Local folder and set the base model (for example `qwen-image-2.1`).
 - **Sizes.** The small buttons are the usual sizes around 1 megapixel. "More sizes" has wider ratios (16:10, 21:9, 2.39:1, 32:9 and portrait versions), and "Resolution" scales them from 0.5 to 4 MP.
@@ -53,7 +64,7 @@ and open http://127.0.0.1:8001.
 - **Qwen 2.1 editing.** Choose **qwen 2.1 edit**, select your Qwen-Image-2.1 weights, and add up to 10 reference images. Their order matches “image 1”, “image 2”, etc. in your prompt. Leave width and height empty to derive the size from the last reference and the advanced **Output resolution** setting; explicit dimensions must be multiples of 32. RGBA output is saved as PNG. **Use KV cache** can be disabled in Advanced. Editing requires at least two steps and guidance of 1 or more; it does not support LoRAs yet.
 - **Quiet console.** The page polls the server all the time. Those requests are only logged with `--log-level debug`.
 
-#### Using it from another machine
+### Using it from another machine
 
 Out of the box `mflux-web` listens only on 127.0.0.1 and has no password, which is fine when you are the only user of your Mac. The simplest way to use it from a laptop is an SSH tunnel, which needs no configuration at all:
 
@@ -73,7 +84,7 @@ This is plain HTTP, so for anything beyond your home network put TLS in front. W
 
 Whatever you choose, the UI only reads models from `--models-dir` (and LoRAs from `--lora-dir`) and only writes to `--output-dir`. It cannot be pointed at other files on the machine. `mflux-web --help` lists every option.
 
-#### Keeping up with upstream
+### Keeping up with upstream
 
 The web UI lives almost entirely in new files, so merging upstream mflux is mostly painless. [docs/upstream-changes-deps.md](docs/upstream-changes-deps.md) lists the few upstream files this fork changes, which upstream code the UI depends on, and the steps for each sync.
 
