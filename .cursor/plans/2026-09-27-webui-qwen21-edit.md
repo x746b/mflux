@@ -1,9 +1,5 @@
 # WebUI Qwen 2.1 editing adoption
 
-User authorized implementation, commit and push with a 0.20.0 version prefix.
-All modifications, environments, caches, test outputs and browser profiles stay under /tmp.
-No real model jobs or model downloads on this Mac.
-
 1. Review notes and merge upstream main (PRs 758, 768, 741, 747, 774), preserving fork patches.
 2. Add worker memory budget, lifetime cache cap, step checks and retained-memory eviction;
    avoid retaining exception tracebacks; version assets and revalidate browser caches.
