@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}mflux{% endblock %}</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v={{ static_version }}">
+  <link rel="stylesheet" href="/static/app.css?v={{ static_version }}">
 </head>
 <body data-page="{{ page }}">
   <header class="topbar">
@@ -29,7 +29,7 @@
     {% block content %}{% endblock %}
   </main>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-  <script src="/static/common.js"></script>
+  <script src="/static/common.js?v={{ static_version }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

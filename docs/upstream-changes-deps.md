@@ -5,7 +5,19 @@ This note records how the `mflux-web` fork (`x746b/mflux`) depends on the origin
 conflicts, and what can break silently even without a conflict. It is meant as a checklist for
 each sync with upstream.
 
-State at the time of writing (2026-09-26):
+Latest sync (2026-09-27): upstream `80bae91`, merged without conflicts. The fork stays on
+`0.20.0+webui.1`; `v0.20.0-webui` remains the install target. See
+[WebUI update and testing notes](webui-0.20.0-update.md).
+
+| Upstream PR | Web UI impact |
+|---|---|
+| #758 | Missing required checkpoint weights now fail before use. |
+| #768 | More Qwen 2.1 LoRA formats work through the existing text-generation adapter. |
+| #741 | Qwen 2.1 edit adapter, ordered references, RGBA PNGs, output resolution and prefix KV cache. |
+| #747 | CLI verbose logging added; `--verbose` is hidden because server logging is configured at startup. |
+| #774 | Documents rejection of unsupported PEFT DoRA adapters in the common loader. |
+
+Original baseline (2026-09-26, retained for comparison):
 
 - Merge base: `cdc2916` "Add PEFT LoRA support for Qwen Image 2.1 (#756)", upstream `main` HEAD.
 - The fork is 4 commits ahead of upstream and 0 behind.
@@ -76,7 +88,7 @@ for anyone who runs mflux as a server or in a loop, not something specific to th
 
 Three changes:
 
-1. `version = "0.20.0+webui"`. The local version suffix marks fork builds.
+1. `version = "0.20.0+webui.1"`. The local version suffix marks fork builds.
 2. A new script entry at the end of `[project.scripts]`:
    `mflux-web = "mflux.web.cli:main"`.
 3. A new `[project.optional-dependencies]` table with the `web` extra (fastapi, itsdangerous,
@@ -124,6 +136,7 @@ runtime. These are the imports, grouped by how likely they are to change.
 | `mflux-generate-flux2` | `mflux.models.flux2.variants.Flux2Klein` |
 | `mflux-generate-qwen` | `mflux.models.qwen.variants.txt2img.qwen_image.QwenImage` |
 | `mflux-generate-qwen-2.1` | `mflux.models.qwen21.variants.txt2img.qwen_image_21.QwenImage21` |
+| `mflux-generate-qwen-2.1-edit` | `mflux.models.qwen21.reference.QwenImage21Edit` |
 | `mflux-generate-z-image`, `-z-image-turbo` | `mflux.models.z_image.variants.z_image.ZImage` |
 | `mflux-generate-krea2` | `mflux.models.krea2.variants.txt2img.krea2.Krea2` |
 | `mflux-generate-ernie-image`, `-ernie-image-turbo` | `mflux.models.ernie_image.variants.txt2img.ernie_image.ErnieImage` |
@@ -158,10 +171,9 @@ at the upstream change that caused it.
 ## 4. New upstream commands are not picked up automatically
 
 The form fields come from each command's argparse options, but the **list of commands** comes from
-`ADAPTERS` in `src/mflux/web/adapters.py`. A new upstream command, for example the Qwen-Image-2.1
-edit command from #741 / #749 once merged, will not appear in the UI until an adapter is added.
-Editing commands also need multi-image upload (`--image-paths`, up to 10 reference images for
-Qwen-Image-2.1), which the current form does not support.
+`ADAPTERS` in `src/mflux/web/adapters.py`. A new upstream command will not appear in the UI until an adapter is added.
+Qwen-Image-2.1 editing now has an adapter and a multi-image upload widget
+(`--image-paths`, up to 10 references). Other edit commands still need their own adapters.
 
 ## 5. Sync procedure
 

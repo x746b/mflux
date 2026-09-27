@@ -1,5 +1,11 @@
 # mflux-web: suggested improvements (27 Sep 2026)
 
+**Implementation update:** the upstream sync, memory guard, browser-cache fixes and Qwen 2.1
+editing described below are now implemented in `0.20.0+webui.1`. See
+[the implementation and validation record](webui-0.20.0-update.md). The original incident notes
+below are preserved as historical context. The real-weight Metal memory leak's root cause
+remains unconfirmed; this update adds bounded caches and protective unloading.
+
 State of the fork: `x746b/mflux` `main` = `d85b079`, tag `v0.20.0-webui` = `cc1f1ff`, exactly as
 before today. Nothing below is applied. Today's attempt is kept only as a local, unpushed branch
 `backup/today-270926` in `/tmp/mflux` (commits `c6a3835`..`20e75e2`), for reference.

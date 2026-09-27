@@ -84,6 +84,7 @@ const MF = (() => {
       if (memory.active_gb !== undefined) label += ` · ${memory.active_gb.toFixed(1)} GB`;
       pill.textContent = label;
       const details = [`MLX memory in use: ${memory.active_gb} GB`, `MLX buffer cache: ${memory.cache_gb} GB`];
+      details.push(`Active memory budget: ${status.max_memory_gb} GB`, `Buffer cache cap: ${status.max_cache_gb} GB`);
       if (model && status.unload_in !== null) details.push(`Unloads after ${Math.ceil(status.unload_in / 60)} more idle min`);
       pill.title = details.join("\n");
       pill.classList.toggle("busy", Boolean(status.loading || status.current_job));

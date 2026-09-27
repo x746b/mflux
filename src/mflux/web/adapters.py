@@ -1,8 +1,10 @@
 import importlib
+import math
 from argparse import Namespace
 from pathlib import Path
 
 from mflux.utils.dimension_resolver import DimensionResolver
+from mflux.web.memory import MemoryGuard
 
 
 class AdapterError(ValueError): ...
@@ -187,6 +189,91 @@ class Qwen21Adapter(CommandAdapter):
         )
 
 
+class Qwen21EditAdapter(CommandAdapter):
+    command = "mflux-generate-qwen-2.1-edit"
+    module = "mflux.models.qwen21.cli.qwen21_edit_generate"
+    latent_creator_path = (
+        "mflux.models.qwen21.reference.latent_creator.qwen_image21_latent_creator.QwenImage21LatentCreator"
+    )
+    builtin_models = ("qwen-image-2.1",)
+    default_guidance = 1.0
+    max_references = 10
+    dimension_step = 32
+
+    def validate(self, args: Namespace) -> None:
+        super().validate(args)
+        if args.scheduler != "linear":
+            raise AdapterError("Qwen-Image-2.1 editing supports the linear Euler scheduler only.")
+        if not math.isfinite(args.guidance) or args.guidance < 1:
+            raise AdapterError("guidance must be finite and at least 1.")
+        width, height = self._dimensions(args)
+        creator = self.latent_creator()
+        creator.validate_resolution(args.output_resolution)
+        if width is None or height is None:
+            from mflux.utils.exif_orientation import oriented_size
+
+            reference_width, reference_height = oriented_size(args.image_paths[-1]) if args.image_paths else (1, 1)
+            default_width, default_height = creator.dimensions(
+                args.output_resolution, reference_width / reference_height
+            )
+            width = default_width if width is None else width
+            height = default_height if height is None else height
+        creator.validate(
+            width,
+            height,
+            args.steps,
+            len(args.image_paths or []),
+        )
+        if max(width, height) > 8192:
+            raise AdapterError("Resolved dimensions must be at most 8192 pixels.")
+        self.restricted_config(args, "qwen-image-2.1")
+        if args.guidance == 1 and args.negative_prompt:
+            args.web_messages.append("Negative prompt is ignored when guidance is 1.")
+
+    def load(self, args: Namespace):
+        from mflux.models.qwen21.reference import QwenImage21Edit
+
+        return QwenImage21Edit(
+            quantize=args.quantize,
+            model_path=args.model_path,
+            model_config=self.restricted_config(args, "qwen-image-2.1"),
+        )
+
+    def generate(self, model, args: Namespace, seed: int, prompt: str):
+        from mflux.utils.prompt_util import PromptUtil
+
+        width, height = self._dimensions(args)
+        try:
+            return model.generate_image(
+                seed=seed,
+                prompt=prompt,
+                negative_prompt=PromptUtil.read_negative_prompt(args),
+                width=width,
+                height=height,
+                num_inference_steps=args.steps,
+                guidance=args.guidance,
+                image_paths=args.image_paths or [],
+                output_resolution=args.output_resolution,
+                use_kv_cache=args.use_kv_cache,
+            )
+        finally:
+            # Upstream memoizes text-only encodings for CLI reuse without a size limit.
+            MemoryGuard.trim_prompt_cache(model)
+
+    @staticmethod
+    def _dimensions(args: Namespace) -> tuple[int | None, int | None]:
+        from mflux.utils.scale_factor import ScaleFactor
+
+        width, height = args.width, args.height
+        if isinstance(width, ScaleFactor) or isinstance(height, ScaleFactor):
+            return DimensionResolver.resolve(
+                width=width if width is not None else ScaleFactor(1),
+                height=height if height is not None else ScaleFactor(1),
+                reference_image_path=args.image_paths[-1] if args.image_paths else None,
+            )
+        return width, height
+
+
 class ZImageAdapter(CommandAdapter):
     command = "mflux-generate-z-image"
     module = "mflux.models.z_image.cli.z_image_generate"
@@ -312,6 +399,7 @@ ADAPTERS: dict[str, CommandAdapter] = {
         Flux2Adapter(),
         QwenAdapter(),
         Qwen21Adapter(),
+        Qwen21EditAdapter(),
         ZImageAdapter(),
         ZImageTurboAdapter(),
         Krea2Adapter(),
@@ -324,7 +412,7 @@ ADAPTERS: dict[str, CommandAdapter] = {
 class ModelCacheKey:
     @staticmethod
     def of(command: str, args: Namespace) -> tuple:
-        lora_paths = tuple(args.lora_paths or ())
+        lora_paths = tuple(getattr(args, "lora_paths", None) or ())
         # Scales and baking only change the weights when there are LoRAs; keying on them
         # otherwise reloads an identical model whenever the checkbox is toggled.
         return (

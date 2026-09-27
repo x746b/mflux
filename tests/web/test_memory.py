@@ -114,3 +114,159 @@ def test_qwen21_geometry_cache_is_bounded():
     assert len(transformer._geometry_cache) == Qwen21Transformer.GEOMETRY_CACHE_SIZE
     assert (49, 4, 4) in transformer._geometry_cache
     assert (1, 4, 4) not in transformer._geometry_cache
+
+
+def test_budget_and_cache_cap_are_installed_and_restored(monkeypatch, tmp_path):
+    limits, caches = [], []
+    monkeypatch.setattr(mx, "set_memory_limit", limits.append)
+    monkeypatch.setattr(mx, "set_cache_limit", caches.append)
+    runner = JobRunner(max_memory_gb=8)
+    runner.start()
+    try:
+        for requested, expected in [(100, 2 * 1024**3), (0.5, 500_000_000)]:
+            wait(runner.submit(FakeInvocation(FakeAdapter(), tmp_path, mlx_cache_limit_gb=requested), {}))
+            assert caches[-2:] == [expected, 2 * 1024**3]
+        assert limits == [8 * 1024**3]
+        assert runner.status()["max_memory_gb"] == 8
+    finally:
+        runner.stop()
+
+
+@pytest.mark.parametrize("phase", ["before", "step", "decode"])
+def test_budget_abort_unloads_model_and_releases_logged_tracebacks(monkeypatch, tmp_path, caplog, phase):
+    import weakref
+
+    from tests.web.test_runner import FakeConfig, FakeModel
+
+    active = [0]
+    refs = []
+
+    class HoardingAdapter(FakeAdapter):
+        def load(self, args):
+            model = FakeModel()
+            refs.append(weakref.ref(model))
+            return model
+
+        def generate(self, model, args, seed, prompt):
+            active[0] = 3 * 1024**3
+            config = FakeConfig(3)
+            callback = model.callbacks.before_loop_callbacks()[0]
+            if phase == "before":
+                callback.call_before_loop(seed, prompt, None, config)
+            elif phase == "step":
+                callback.call_in_loop(0, seed, prompt, None, config, None)
+            else:
+                callback.call_after_loop(seed, prompt, None, config)
+            raise AssertionError("memory guard did not stop the job")
+
+    monkeypatch.setattr(mx, "get_active_memory", lambda: active[0])
+    runner = JobRunner(max_memory_gb=2)
+    runner.start()
+    try:
+        failed = wait(runner.submit(FakeInvocation(HoardingAdapter(), tmp_path), {}))
+        assert failed.status == "error"
+        assert "exceeds the 2 GB server budget" in failed.error
+        assert runner.status()["cached_models"] == []
+        assert refs[0]() is None
+        assert all(record.exc_info is None for record in caplog.records)
+        assert all(not isinstance(arg, BaseException) for record in caplog.records for arg in (record.args or ()))
+        active[0] = 0
+        assert wait(runner.submit(FakeInvocation(FakeAdapter(), tmp_path), {})).status == "done"
+    finally:
+        runner.stop()
+
+
+def test_cumulative_retained_growth_evicts_before_next_queued_job(monkeypatch, tmp_path):
+    active = [0]
+
+    class LeakingAdapter(FakeAdapter):
+        def load(self, args):
+            active[0] = 4 * 1024**3
+            return super().load(args)
+
+        def generate(self, model, args, seed, prompt):
+            active[0] += 1024**3
+            return super().generate(model, args, seed, prompt)
+
+    monkeypatch.setattr(mx, "get_active_memory", lambda: active[0])
+    runner = JobRunner(max_memory_gb=20)
+    adapter = LeakingAdapter()
+    runner.start()
+    try:
+        jobs = [runner.submit(FakeInvocation(adapter, tmp_path), {}) for _ in range(5)]
+        for job in jobs:
+            assert wait(job).status == "done"
+        assert adapter.loads == 2
+        assert any("retained MLX memory" in message for message in jobs[3].messages)
+    finally:
+        runner.stop()
+
+
+def test_memory_cli_help_and_invalid_budgets():
+    from mflux.web.cli import build_parser
+    from mflux.web.memory import MemoryGuard
+
+    assert "75%" in build_parser().format_help()
+    for value in (0, -1, float("inf"), float("nan")):
+        with pytest.raises(ValueError, match="finite number greater than zero"):
+            MemoryGuard(value)
+
+
+@pytest.mark.parametrize("low_ram", [True, False])
+def test_cli_callbacks_cannot_raise_cache_limit(monkeypatch, tmp_path, low_ram):
+    from mflux.callbacks.callback_manager import CallbackManager
+
+    seen = []
+    monkeypatch.setattr(CallbackManager, "register_callbacks", lambda **kwargs: seen.append(kwargs["args"]))
+    runner = JobRunner(cache_size=0, max_memory_gb=2)
+    runner.start()
+    try:
+        job = wait(runner.submit(FakeInvocation(FakeAdapter(), tmp_path, low_ram=low_ram, mlx_cache_limit_gb=100), {}))
+        assert job.status == "done", job.error
+        assert seen[0].mlx_cache_limit_gb * 1000**3 == runner.memory.cache_limit
+    finally:
+        runner.stop()
+
+
+def test_prompt_cache_is_bounded_across_text_generation_jobs(tmp_path):
+    class PromptCachingAdapter(FakeAdapter):
+        def load(self, args):
+            model = super().load(args)
+            model.prompt_cache = {}
+            return model
+
+        def generate(self, model, args, seed, prompt):
+            model.prompt_cache[prompt] = seed
+            return super().generate(model, args, seed, prompt)
+
+    runner = JobRunner(max_memory_gb=2)
+    runner.start()
+    try:
+        adapter = PromptCachingAdapter()
+        for index in range(7):
+            assert wait(runner.submit(FakeInvocation(adapter, tmp_path, prompt=str(index)), {})).status == "done"
+        assert adapter.loads == 1
+        assert list(next(iter(runner._models.values()))["model"].prompt_cache) == ["3", "4", "5", "6"]
+    finally:
+        runner.stop()
+
+
+def test_budget_breach_cancels_remaining_queue(monkeypatch, tmp_path):
+    from mflux.web.memory import MemoryBudgetExceeded
+
+    class OverBudgetAdapter(FakeAdapter):
+        def generate(self, model, args, seed, prompt):
+            raise MemoryBudgetExceeded("budget exceeded")
+
+    runner = JobRunner(max_memory_gb=2)
+    failed = runner.submit(FakeInvocation(OverBudgetAdapter(), tmp_path), {})
+    adapter = FakeAdapter()
+    queued = runner.submit(FakeInvocation(adapter, tmp_path), {})
+    runner.start()
+    try:
+        assert wait(failed).status == "error"
+        assert wait(queued).status == "cancelled"
+        assert adapter.loads == 0
+        assert "memory budget" in queued.events[-1]["message"]
+    finally:
+        runner.stop()

@@ -34,6 +34,7 @@ class Invocation:
     # supported model is used with.
     NUMBER_BOUNDS = {
         "--steps": (1, 1000),
+        "--output-resolution": (32, 8192),
         "--guidance": (-100, 100),
         "--mlx-cache-limit-gb": (0.1, 1024),
         "--vae-tile-size": (128, 8192),
@@ -69,6 +70,7 @@ class Invocation:
         argv.extend(Invocation._model_tokens(payload.get("model"), adapter, guard, provided))
         argv.extend(Invocation._seed_tokens(payload.get("seeds"), provided))
         argv.extend(Invocation._image_tokens(payload.get("image"), guard, fields, provided))
+        argv.extend(Invocation._reference_tokens(payload.get("references"), guard, fields, provided, adapter))
         lora_argv = Invocation._lora_tokens(payload.get("loras"), guard, fields, provided)
 
         prompt = options.get("--prompt")
@@ -260,6 +262,25 @@ class Invocation:
             tokens.append(str(float(strength)))
         provided.add("--image")
         return tokens
+
+    @staticmethod
+    def _reference_tokens(references, guard: PathGuard, fields: dict, provided: set[str], adapter) -> list[str]:
+        if references is None or references == []:
+            return []
+        if "--image-paths" not in fields:
+            raise InvocationError("This command does not take reference images")
+        if not isinstance(references, list) or len(references) > adapter.max_references:
+            raise InvocationError(f"references must be a list of up to {adapter.max_references} upload ids")
+        paths = []
+        for upload_id in references:
+            if not isinstance(upload_id, str):
+                raise InvocationError("Each reference must be an upload id")
+            try:
+                paths.append(str(guard.upload_file(upload_id)))
+            except PathRejected as exc:
+                raise InvocationError(str(exc)) from exc
+        provided.add("--image-paths")
+        return ["--image-paths", *paths]
 
     @staticmethod
     def _lora_tokens(loras, guard: PathGuard, fields: dict, provided: set[str]) -> list[str]:

@@ -64,6 +64,16 @@
     </div>
   </details>
 
+  <details class="field-group collapsible" id="references-section" hidden open>
+    <summary>Reference images <span class="summary-note" id="references-note"></span></summary>
+    <small class="hint">Add up to 10 images, in order. Refer to them as “image 1”, “image 2”, etc. in your prompt. Leave width and height empty to use the last reference's aspect ratio.</small>
+    <label class="dropzone" id="references-dropzone">
+      <input type="file" id="reference-images" accept="image/png,image/jpeg,image/webp" multiple>
+      <span id="references-upload-text">Drop images or click to choose</span>
+    </label>
+    <div id="reference-list" class="reference-list"></div>
+  </details>
+
   <details class="field-group collapsible" id="lora-section">
     <summary>LoRAs <span class="summary-note" id="lora-note"></span></summary>
     <div id="lora-rows"></div>
@@ -87,6 +97,7 @@
     <button type="button" id="copy-command" class="ghost">Copy CLI command</button>
     <button type="button" id="reset-form" class="ghost">Reset</button>
   </div>
+  <small class="hint">Generating while another job runs adds your request to the queue.</small>
   <p id="form-error" class="error" hidden></p>
   <p id="form-warnings" class="warning" hidden></p>
 </form>
@@ -112,10 +123,10 @@
   <div class="panel">
     <div class="panel-title row-between">
       <span>Recent jobs</span>
-      <button type="button" id="clear-history" class="ghost small" title="Forget finished jobs, their uploaded init images and saved form drafts. Gallery images are kept.">Clear history</button>
+      <button type="button" id="clear-history" class="ghost small" title="Forget finished jobs, uploaded images and saved form drafts. Gallery images are kept.">Clear history</button>
     </div>
     <ul id="job-list" class="job-list"></ul>
   </div>
 </section>
 {% endblock %}
-{% block scripts %}<script src="/static/generate.js"></script>{% endblock %}
+{% block scripts %}<script src="/static/generate.js?v={{ static_version }}"></script>{% endblock %}

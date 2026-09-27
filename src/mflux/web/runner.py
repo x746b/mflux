@@ -1,3 +1,4 @@
+import copy
 import gc
 import io
 import json
@@ -6,12 +7,14 @@ import queue
 import secrets
 import threading
 import time
+import weakref
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from mflux.web.adapters import AdapterError, ModelCacheKey
 from mflux.web.invocation import Invocation, InvocationError
+from mflux.web.memory import MemoryBudgetExceeded, MemoryGuard
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +52,7 @@ class Job:
 
     @property
     def finished(self) -> bool:
-        return self.status in Job.TERMINAL
+        return self.status in Job.TERMINAL and self.finished_at is not None
 
     def snapshot(self) -> dict:
         return {
@@ -71,10 +74,11 @@ class WebProgressCallback:
     # Registered once per cached model; forwards to whichever job the runner is executing.
     def __init__(self, runner: "JobRunner", model, latent_creator):
         self.runner = runner
-        self.model = model
+        self.model = weakref.proxy(model)
         self.latent_creator = latent_creator
 
     def call_before_loop(self, seed, prompt, latents, config, **kwargs) -> None:
+        self.runner.memory.check()
         job = self.runner.current_job
         if job is None:
             return
@@ -84,6 +88,7 @@ class WebProgressCallback:
         job.emit("seed_start", seed=seed, total=config.num_inference_steps, start=config.init_time_step)
 
     def call_in_loop(self, t, seed, prompt, latents, config, time_steps) -> None:
+        self.runner.memory.check()
         job = self.runner.current_job
         if job is None:
             return
@@ -105,10 +110,12 @@ class WebProgressCallback:
                 job.preview_jpeg = self._preview(latents, config, seed, prompt)
                 job.emit("preview", seed=seed, step=t + 1)
             except Exception as exc:  # noqa: BLE001 -- a failed preview must not kill the run
-                logger.warning("Preview decode failed: %s", exc)
+                logger.warning("Preview decode failed: %s", str(exc))
                 job.preview_every = 0
+            self.runner.memory.check()
 
     def call_after_loop(self, seed, prompt, latents, config) -> None:
+        self.runner.memory.check()
         job = self.runner.current_job
         if job is not None:
             job.emit("decoding", seed=seed)
@@ -143,7 +150,7 @@ class JobRunner:
     UNLOAD = "unload"
     GB = 1024**3
 
-    def __init__(self, cache_size: int = 1, idle_unload_seconds: float = 600):
+    def __init__(self, cache_size: int = 1, idle_unload_seconds: float = 600, max_memory_gb: float | None = None):
         self.cache_size = max(cache_size, 0)
         self.idle_unload_seconds = max(idle_unload_seconds, 0)
         self.current_job: Job | None = None
@@ -155,13 +162,17 @@ class JobRunner:
         self._thread = threading.Thread(target=self._work, name="mflux-web-worker", daemon=True)
         self._loading: str | None = None
         self._last_used = time.monotonic()
-        self._default_cache_limit: int | None = None
+        self.memory = MemoryGuard(max_memory_gb)
 
     def start(self) -> None:
         self._thread.start()
 
     def stop(self) -> None:
+        for job in self.jobs():
+            self.cancel(job.id)
         self._queue.put(None)
+        if self._thread.is_alive():
+            self._thread.join(timeout=5)
 
     def submit(self, invocation: Invocation, payload: dict, preview_every: int = 0) -> Job:
         job = Job(invocation=invocation, payload=payload, preview_every=max(int(preview_every or 0), 0))
@@ -184,7 +195,7 @@ class JobRunner:
         with self._jobs_lock:
             return list(self._jobs.values())
 
-    def cancel(self, job_id: str) -> bool:
+    def cancel(self, job_id: str, reason: str = "Removed from queue") -> bool:
         job = self.get(job_id)
         if job is None or job.finished:
             return False
@@ -192,7 +203,7 @@ class JobRunner:
         if job.status == "queued":
             job.status = "cancelled"
             job.finished_at = time.time()
-            job.emit("cancelled", message="Removed from queue")
+            job.emit("cancelled", message=reason)
         return True
 
     def clear_history(self) -> int:
@@ -206,9 +217,12 @@ class JobRunner:
     def active_uploads(self) -> set[str]:
         uploads = set()
         for job in self.jobs():
+            if job.finished:
+                continue
             image = (job.payload or {}).get("image") or {}
-            if not job.finished and image.get("upload"):
+            if image.get("upload"):
                 uploads.add(str(image["upload"]))
+            uploads.update((job.payload or {}).get("references") or [])
         return uploads
 
     def request_unload(self) -> bool:
@@ -229,6 +243,8 @@ class JobRunner:
             "cached_models": [ModelCacheKey.describe(key) for key in list(self._models)],
             "cache_size": self.cache_size,
             "memory": JobRunner.memory_snapshot(),
+            "max_memory_gb": self.memory.limit_gb,
+            "max_cache_gb": self.memory.cache_limit / self.GB,
             "unload_in": self._seconds_until_idle_unload(),
         }
 
@@ -245,9 +261,7 @@ class JobRunner:
     def _work(self) -> None:
         import mlx.core as mx
 
-        # MLX has no getter for the cache limit; read it by setting and restoring it.
-        self._default_cache_limit = mx.set_cache_limit(0)
-        mx.set_cache_limit(self._default_cache_limit)
+        self.memory.install()
         while True:
             try:
                 job = self._queue.get(timeout=self._seconds_until_idle_unload())
@@ -255,6 +269,7 @@ class JobRunner:
                 self._unload_all(f"idle for {self.idle_unload_seconds / 60:g} min")
                 continue
             if job is None:
+                self._unload_all("server stopped")
                 return
             if isinstance(job, str) and job == JobRunner.UNLOAD:
                 self._unload_all("unload requested")
@@ -269,21 +284,29 @@ class JobRunner:
             try:
                 self._run(job)
                 job.status = "done"
-                job.emit("done", images=job.images)
+                terminal_data = {"images": job.images}
             except JobCancelled as exc:
                 job.status = "cancelled"
-                job.emit("cancelled", message=str(exc), images=job.images)
+                terminal_data = {"message": str(exc), "images": job.images}
+                JobRunner._clear_tracebacks(exc)
             except Exception as exc:  # noqa: BLE001 -- every failure is reported on the job
                 job.status = "error"
                 job.error = JobRunner._describe_error(exc)
+                if isinstance(exc, MemoryBudgetExceeded):
+                    for queued in self.jobs():
+                        if queued.status == "queued":
+                            self.cancel(queued.id, "Removed from queue after the server memory budget was exceeded")
                 if not isinstance(exc, (InvocationError, AdapterError)):
-                    logger.exception("Job %s failed", job.id)
-                job.emit("error", message=job.error, images=job.images)
+                    # Logging handlers may retain records: never attach a traceback/model.
+                    logger.error("Job %s failed: %s", job.id, job.error)
+                terminal_data = {"message": job.error, "images": job.images}
+                JobRunner._clear_tracebacks(exc)
             finally:
-                job.finished_at = time.time()
-                self.current_job = None
                 self.battery_saver = None
                 self._after_job(job)
+                job.emit(job.status, **terminal_data)
+                job.finished_at = time.time()
+                self.current_job = None
 
     def _after_job(self, job: Job) -> None:
         import mlx.core as mx
@@ -291,11 +314,17 @@ class JobRunner:
         # MLX keeps freed buffers for reuse, by default up to most of the machine's memory.
         # A long-lived server must hand them back after every job, or each new size or
         # prompt length leaves more behind and the process looks like it holds two models.
-        if self._default_cache_limit is not None:
-            mx.set_cache_limit(self._default_cache_limit)
+        self.memory.set_cache_limit()
         peak_gb = mx.get_peak_memory() / JobRunner.GB
         gc.collect()
         mx.clear_cache()
+        if job.status in ("error", "cancelled"):
+            self._unload_all("job failed or was cancelled")
+        elif self._models and self.memory.retained_growth():
+            message = "Unloaded cached models because retained MLX memory grew beyond the baseline or budget."
+            job.messages.append(message)
+            logger.warning("%s", message)
+            self._unload_all("retained memory growth")
         self._last_used = time.monotonic()
         memory = JobRunner.memory_snapshot()
         loaded = ", ".join(ModelCacheKey.describe(key)["model"] or key[0] for key in self._models) or "none"
@@ -319,12 +348,11 @@ class JobRunner:
             return
         names = ", ".join(ModelCacheKey.describe(key)["model"] or key[0] for key in self._models)
         self._models.clear()
+        self.memory.baseline = None
         JobRunner._release_memory()
         logger.info("Unloaded %s (%s) · now %.1f GB active", names, reason, JobRunner.memory_snapshot()["active_gb"])
 
     def _run(self, job: Job) -> None:
-        import mlx.core as mx
-
         from mflux.callbacks.instances.battery_saver import BatterySaver
         from mflux.utils.exceptions import StopImageGenerationException
         from mflux.utils.prompt_util import PromptUtil
@@ -334,12 +362,13 @@ class JobRunner:
         args = invocation.parse()
         adapter.validate(args)
         job.messages.extend(args.web_messages)
-        if args.mlx_cache_limit_gb is not None:
-            mx.set_cache_limit(int(args.mlx_cache_limit_gb * 1000**3))
+        self.memory.set_cache_limit(args.mlx_cache_limit_gb)
+        self.memory.check()
         self.battery_saver = BatterySaver(battery_percentage_stop_limit=args.battery_percentage_stop_limit)
 
         cacheable = not args.low_ram and self.cache_size > 0
         model = self._cached_model(job, args) if cacheable else self._uncached_model(job, args)
+        self.memory.check()
         self._apply_tiling(model, args)
         try:
             for index, seed in enumerate(args.seed):
@@ -350,6 +379,9 @@ class JobRunner:
                     image = adapter.generate(model, args, seed, PromptUtil.read_prompt(args))
                 except StopImageGenerationException as exc:
                     raise JobCancelled(str(exc)) from exc
+                finally:
+                    MemoryGuard.trim_prompt_cache(model)
+                self.memory.check()
                 job.images.append(self._save(job, image, args, seed))
                 job.emit("image", name=job.images[-1], seed=seed)
         finally:
@@ -368,6 +400,7 @@ class JobRunner:
             del evicted
             JobRunner._release_memory()
         model = self._load(job, args, key)
+        self.memory.baseline = None
         self._models[key] = {"model": model, "tiling": getattr(model, "tiling_config", None)}
         return model
 
@@ -377,11 +410,19 @@ class JobRunner:
         # Low-RAM runs use the CLI's own MemorySaver, which deletes encoders and transformer
         # as it goes, so the model cannot be reused and the cache is emptied first.
         self._models.clear()
+        self.memory.baseline = None
         JobRunner._release_memory()
         key = ModelCacheKey.of(job.invocation.command, args)
         model = self._load(job, args, key)
+        # CLI callbacks also set a cache limit. Clamp their input before registration so
+        # low-RAM and cache-size=0 jobs cannot temporarily restore an unbounded cache.
+        callback_args = copy.copy(args)
+        requested_gb = args.mlx_cache_limit_gb
+        if requested_gb is None:
+            requested_gb = 1.0 if args.low_ram else self.memory.cache_limit / 1000**3
+        callback_args.mlx_cache_limit_gb = min(requested_gb, self.memory.cache_limit / 1000**3)
         CallbackManager.register_callbacks(
-            args=args, model=model, latent_creator=job.invocation.adapter.latent_creator()
+            args=callback_args, model=model, latent_creator=job.invocation.adapter.latent_creator()
         )
         return model
 
@@ -424,6 +465,20 @@ class JobRunner:
 
         gc.collect()
         mx.clear_cache()
+
+    @staticmethod
+    def _clear_tracebacks(exc: BaseException) -> None:
+        seen = set()
+        pending = [exc]
+        while pending:
+            current = pending.pop()
+            if id(current) in seen:
+                continue
+            seen.add(id(current))
+            pending.extend(e for e in (current.__cause__, current.__context__) if e is not None)
+            current.__traceback__ = None
+            current.__cause__ = None
+            current.__context__ = None
 
     @staticmethod
     def _describe_error(exc: Exception) -> str:

@@ -4,7 +4,7 @@
   const STORAGE_PREFIX = "mflux-web:";
   const REUSE_KEY = `${STORAGE_PREFIX}reuse`;
   const LAST_COMMAND_KEY = `${STORAGE_PREFIX}last-command`;
-  const SPECIAL_FLAGS = new Set(["--model", "--lora", "--image", "--seed"]);
+  const SPECIAL_FLAGS = new Set(["--model", "--lora", "--image", "--image-paths", "--seed"]);
   const SIZE_PRESETS = [
     ["1:1", 1024, 1024], ["4:3", 1152, 864], ["3:4", 864, 1152],
     ["3:2", 1216, 832], ["2:3", 832, 1216], ["16:9", 1344, 768], ["9:16", 768, 1344],
@@ -23,12 +23,11 @@
   };
   const MEGAPIXELS = [0.5, 1, 1.5, 2, 3, 4];
   const BASIC_ORDER = ["--prompt", "--negative-prompt", "--width", "--height", "--steps", "--guidance"];
-  const DIMENSION_STEP = 16;
   const MAX_DIMENSION = 8192;
   const $ = (id) => document.getElementById(id);
   const { el } = MF;
 
-  const state = { commands: [], localModels: [], localLoras: [], command: null, upload: null, activeJob: null, source: null, lastSeq: -1 };
+  const state = { commands: [], localModels: [], localLoras: [], command: null, upload: null, references: [], uploading: false, uploadEpoch: 0, activeJob: null, source: null, lastSeq: -1 };
 
   function storage(action, key, value) {
     try {
@@ -76,6 +75,7 @@
     const hasImage = spec.fields.some((f) => f.flag === "--image");
     const hasLora = spec.fields.some((f) => f.flag === "--lora");
     $("img2img-section").hidden = !hasImage;
+    $("references-section").hidden = !spec.fields.some((f) => f.flag === "--image-paths");
     $("lora-section").hidden = !hasLora;
     $("lora-rows").replaceChildren();
     $("lora-options").replaceChildren(...state.localLoras.map((l) => el("option", { value: l.path, text: l.name })));
@@ -136,7 +136,8 @@
   }
 
   function ratioDimensions(ratioW, ratioH, megapixels) {
-    const snap = (value) => Math.min(MAX_DIMENSION, Math.max(DIMENSION_STEP, Math.round(value / DIMENSION_STEP) * DIMENSION_STEP));
+    const step = state.command.dimension_step || 16;
+    const snap = (value) => Math.min(MAX_DIMENSION, Math.max(step, Math.round(value / step) * step));
     const width = Math.sqrt((megapixels * 1e6 * ratioW) / ratioH);
     return [snap(width), snap((width * ratioH) / ratioW)];
   }
@@ -262,8 +263,9 @@
       model: modelValue ? { source, value: modelValue } : null,
       options,
       seeds,
-      loras,
-      image: state.upload ? { upload: state.upload, strength: Number($("init-strength").value) } : null,
+      loras: $("lora-section").hidden ? [] : loras,
+      image: state.upload && !$("img2img-section").hidden ? { upload: state.upload, strength: Number($("init-strength").value) } : null,
+      references: $("references-section").hidden ? [] : state.references.map((ref) => ref.id),
       preview_every: Number($("preview-every").value),
     };
   }
@@ -280,7 +282,6 @@
     $("seeds").value = (payload.seeds || []).join(", ");
     for (const lora of payload.loras || []) addLoraRow(lora.path, lora.scale);
     $("preview-every").value = String(payload.preview_every || 0);
-    setUpload(null);
     updateModelSource();
     updatePresetHighlight();
   }
@@ -289,35 +290,97 @@
     if (!state.command || state.skipSave) return;
     const payload = collectPayload();
     delete payload.image;
+    delete payload.references;
     storage("set", `${STORAGE_PREFIX}form:${payload.command}`, payload);
     storage("set", LAST_COMMAND_KEY, payload.command);
   }
 
   // ---------- init image ----------
 
-  async function uploadImage(file) {
-    if (!file) return;
+  async function postUpload(file) {
     const form = new FormData();
     form.append("file", file);
+    return MF.api("/api/uploads", { method: "POST", form });
+  }
+
+  async function uploadImage(file) {
+    if (!file || state.uploading) return;
+    const epoch = state.uploadEpoch;
+    state.uploading = true;
     $("dropzone-text").textContent = "Uploading…";
     try {
-      const result = await MF.api("/api/uploads", { method: "POST", form });
-      setUpload(result.id, URL.createObjectURL(file));
+      const result = await postUpload(file);
+      if (epoch === state.uploadEpoch) setUpload(result.id, URL.createObjectURL(file));
     } catch (exc) {
-      setUpload(null);
       showError(exc.message);
+    } finally {
+      state.uploading = false;
+      $("dropzone-text").textContent = "Drop an image or click to choose";
     }
   }
 
   function setUpload(id, previewUrl) {
     state.upload = id;
     const img = $("init-preview");
+    if (img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
     img.hidden = !id;
     if (previewUrl) img.src = previewUrl;
+    else img.removeAttribute("src");
     $("dropzone-text").hidden = Boolean(id);
     $("dropzone-text").textContent = "Drop an image or click to choose";
     if (!id) $("init-image").value = "";
     updateNotes();
+  }
+
+  async function uploadReferences(files) {
+    if (state.uploading || !files.length) return;
+    const limit = state.command.max_references;
+    if (state.references.length + files.length > limit) {
+      showError(`Choose at most ${limit} reference images in total.`);
+      $("reference-images").value = "";
+      return;
+    }
+    const epoch = state.uploadEpoch;
+    state.uploading = true;
+    $("references-upload-text").textContent = "Uploading…";
+    showError("");
+    try {
+      for (const file of files) {
+        if (epoch !== state.uploadEpoch) break;
+        const result = await postUpload(file);
+        if (epoch !== state.uploadEpoch) break;
+        state.references.push({ id: result.id, name: file.name, url: URL.createObjectURL(file) });
+        renderReferences();
+      }
+    } catch (exc) {
+      showError(exc.message);
+    } finally {
+      state.uploading = false;
+      $("reference-images").value = "";
+      $("references-upload-text").textContent = "Drop images or click to choose";
+    }
+  }
+
+  function renderReferences() {
+    $("reference-list").replaceChildren(...state.references.map((ref, index) => el("div", { class: "reference-card" },
+      el("img", { src: ref.url, alt: ref.name }),
+      el("span", { text: `Image ${index + 1}`, title: ref.name }),
+      el("button", { type: "button", class: "ghost small", text: "Remove", "aria-label": `Remove image ${index + 1}`, onclick: () => {
+        URL.revokeObjectURL(ref.url);
+        state.references.splice(state.references.indexOf(ref), 1);
+        renderReferences();
+      } }),
+    )));
+    $("references-note").textContent = state.references.length ? `${state.references.length} / 10` : "";
+  }
+
+  function clearUploads() {
+    state.uploadEpoch += 1;
+    setUpload(null);
+    state.references.forEach((ref) => URL.revokeObjectURL(ref.url));
+    state.references = [];
+    renderReferences();
+    $("reference-images").value = "";
   }
 
   // ---------- jobs ----------
@@ -334,6 +397,7 @@
 
   async function submit(event) {
     event.preventDefault();
+    if (state.uploading) { showError("Wait for image uploads to finish."); return; }
     showError("");
     showWarnings([]);
     saveForm();
@@ -341,6 +405,7 @@
     buttons.forEach((b) => { b.disabled = true; });
     try {
       const job = await MF.api("/api/generate", { method: "POST", json: collectPayload() });
+      if (job.status === "queued") MF.toast("Job added to the queue");
       track(job);
       refreshJobs();
     } catch (exc) {
@@ -492,10 +557,12 @@
   }
 
   async function clearHistory() {
-    if (!window.confirm("Clear job history? This forgets finished jobs, deletes their uploaded init images and removes saved form drafts from this browser. Images in the gallery are kept.")) return;
+    if (state.uploading) { showError("Wait for image uploads to finish."); return; }
+    if (!window.confirm("Clear job history? This forgets finished jobs, deletes unused uploaded images and removes saved form drafts from this browser. Images in the gallery are kept.")) return;
     try {
       const result = await MF.api("/api/jobs", { method: "DELETE" });
       clearStoredDrafts();
+      clearUploads();
       if (state.activeJob && ["done", "error", "cancelled"].includes(state.activeJob.status)) resetStage();
       refreshJobs();
       MF.toast(`Cleared ${result.cleared_jobs} job${result.cleared_jobs === 1 ? "" : "s"}`);
@@ -556,6 +623,11 @@
     $("init-image").addEventListener("change", (e) => uploadImage(e.target.files[0]));
     $("init-strength").addEventListener("input", (e) => { $("strength-value").textContent = e.target.value; });
     $("clear-image").addEventListener("click", () => setUpload(null));
+    $("reference-images").addEventListener("change", (e) => uploadReferences([...e.target.files]));
+    const referencesZone = $("references-dropzone");
+    referencesZone.addEventListener("dragover", (e) => { e.preventDefault(); referencesZone.classList.add("drag"); });
+    referencesZone.addEventListener("dragleave", () => referencesZone.classList.remove("drag"));
+    referencesZone.addEventListener("drop", (e) => { e.preventDefault(); referencesZone.classList.remove("drag"); uploadReferences([...e.dataTransfer.files]); });
     const zone = $("dropzone");
     zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("drag"); });
     zone.addEventListener("dragleave", () => zone.classList.remove("drag"));
@@ -566,6 +638,7 @@
       setStatus("Cancelling", "stops after the current step");
     });
     $("copy-command").addEventListener("click", async () => {
+      if (state.uploading) { showError("Wait for image uploads to finish."); return; }
       showError("");
       try {
         const result = await MF.api("/api/validate", { method: "POST", json: collectPayload() });
@@ -579,7 +652,7 @@
       storage("remove", `${STORAGE_PREFIX}form:${state.command.command}`);
       renderCommand(state.command.command);
       $("seeds").value = "";
-      setUpload(null);
+      clearUploads();
     });
     $("generate-form").addEventListener("input", () => { state.skipSave = false; });
     window.addEventListener("beforeunload", saveForm);

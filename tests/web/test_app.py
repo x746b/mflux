@@ -49,6 +49,38 @@ def test_open_loopback_serves_pages_with_security_headers(tmp_path):
     assert client.get("/static/app.css").status_code == 200
 
 
+def test_assets_are_versioned_and_revalidated(tmp_path):
+    import re
+
+    client = client_for(make_app(tmp_path))
+    for page in ("/", "/gallery"):
+        response = client.get(page)
+        assert response.headers["cache-control"] == "no-cache"
+        urls = re.findall(r'(?:src|href)="(/static/[^\"]+)"', response.text)
+        assert urls and all(f"?v={WebApp.static_version()}" in url for url in urls)
+        for url in urls:
+            asset = client.get(url)
+            assert asset.status_code == 200
+            assert asset.headers["cache-control"] == "no-cache"
+            cached = client.get(url, headers={"If-None-Match": asset.headers["etag"]})
+            assert cached.status_code == 304
+            assert cached.headers["cache-control"] == "no-cache"
+    assert client.get("/api/status").headers["cache-control"] == "no-store"
+
+
+def test_static_version_changes_with_asset_content(monkeypatch, tmp_path):
+    import mflux.web.app as app_module
+
+    static = tmp_path / "static"
+    static.mkdir()
+    asset = static / "generate.js"
+    asset.write_text("old")
+    monkeypatch.setattr(app_module, "WEB_DIR", tmp_path)
+    before = WebApp.static_version()
+    asset.write_text("new")
+    assert WebApp.static_version() != before
+
+
 def test_foreign_host_header_is_refused(tmp_path):
     client = TestClient(make_app(tmp_path).app, base_url="http://evil.example")
     assert client.get("/").status_code == 421

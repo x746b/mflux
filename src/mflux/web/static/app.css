@@ -225,3 +225,7 @@ button.danger { color: var(--danger); }
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
   background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 8px; font-size: 13px; z-index: 50;
 }
+:root { --reference-thumb-size: 88px; }
+.reference-list { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.reference-card { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.reference-card img { width: var(--reference-thumb-size); height: var(--reference-thumb-size); object-fit: contain; border-radius: 6px; }

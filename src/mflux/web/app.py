@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import secrets
@@ -42,10 +43,22 @@ class WebApp:
         self.guard = PathGuard(settings.output_dir, settings.upload_dir, settings.models_dirs, settings.lora_dirs)
         self.schema = FormSchema()
         self.runner = runner or JobRunner(
-            cache_size=settings.cache_size, idle_unload_seconds=settings.idle_unload_minutes * 60
+            cache_size=settings.cache_size,
+            idle_unload_seconds=settings.idle_unload_minutes * 60,
+            max_memory_gb=settings.max_memory_gb,
         )
         self.templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
+        self.templates.env.globals["static_version"] = WebApp.static_version()
         self.app = self._build()
+
+    @staticmethod
+    def static_version() -> str:
+        digest = hashlib.sha256()
+        for path in sorted((WEB_DIR / "static").rglob("*")):
+            if path.is_file():
+                digest.update(path.relative_to(WEB_DIR).as_posix().encode())
+                digest.update(path.read_bytes())
+        return digest.hexdigest()[:12]
 
     @property
     def auth_required(self) -> bool:
@@ -96,6 +109,8 @@ class WebApp:
         response = await call_next(request)
         if path.startswith("/api/"):
             response.headers.setdefault("Cache-Control", "no-store")
+        else:
+            response.headers["Cache-Control"] = "no-cache"
         return WebApp._secured(response)
 
     def _is_authenticated(self, request: Request, bearer: str | None) -> bool:

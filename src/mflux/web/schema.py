@@ -6,7 +6,7 @@ from mflux.web.adapters import ADAPTERS
 class FormSchema:
     # Rendered by dedicated widgets (model picker, LoRA list, seed list, image upload) with
     # their own validation in Invocation; never accepted as a plain option value.
-    SPECIAL_FLAGS = ("--model", "--lora", "--image", "--seed")
+    SPECIAL_FLAGS = ("--model", "--lora", "--image", "--image-paths", "--seed")
     # Paths, stdin and output plumbing the server owns. A form must never set these.
     BLOCKED_FLAGS = frozenset(
         {
@@ -22,6 +22,7 @@ class FormSchema:
             "--metadata",
             "--no-metadata",
             "--auto-seeds",
+            "--verbose",
         }
     )
     TEXTAREA_FLAGS = ("--prompt", "--negative-prompt")
@@ -88,6 +89,8 @@ class FormSchema:
             "traits": described.get("traits", {}),
             "models": models,
             "fields": fields,
+            "max_references": getattr(adapter, "max_references", 0),
+            "dimension_step": getattr(adapter, "dimension_step", 16),
         }
 
     @staticmethod

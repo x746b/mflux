@@ -1044,7 +1044,7 @@ wheels = [
 
 [[package]]
 name = "mflux"
-version = "0.20.0+webui"
+version = "0.20.0+webui.1"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },

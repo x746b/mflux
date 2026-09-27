@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 
+from mflux.web.memory import MemoryGuard
 from mflux.web.network import NetworkPolicy
 from mflux.web.settings import DEFAULT_CONFIG_PATH, DEFAULT_HOST, DEFAULT_OUTPUT_DIR, DEFAULT_PORT, WebSettings
 
@@ -27,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tls-key", type=Path, default=None, help="Private key for --tls-cert (PEM).")
     parser.add_argument("--behind-https", action="store_true", help="A TLS-terminating proxy sits in front: mark session cookies Secure.")  # fmt: off
     parser.add_argument("--max-upload-mb", type=int, default=50, help="Largest init image accepted (default: 50).")
+    parser.add_argument("--max-memory-gb", type=float, default=None, help="MLX active-memory budget in GiB (default: 75%% of RAM). Buffer cache is capped at 25%% of this budget.")  # fmt: off
     parser.add_argument("--config", type=Path, default=Path(os.environ.get("MFLUX_WEB_CONFIG", DEFAULT_CONFIG_PATH)), help=f"State file for the session secret and a first-run key (default: {DEFAULT_CONFIG_PATH}).")  # fmt: off
     parser.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"])
     return parser
@@ -35,6 +37,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    try:
+        memory_limit = MemoryGuard.resolve_limit(args.max_memory_gb)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     try:
         import uvicorn
@@ -61,6 +67,7 @@ def main() -> None:
         lora_dirs=[d.expanduser().resolve() for d in args.lora_dir],
         cache_size=args.cache_size,
         idle_unload_minutes=max(args.idle_unload, 0),
+        max_memory_gb=memory_limit,
         require_auth=args.require_auth,
         api_key_hash=WebAuth.hash_key(api_key) if api_key else None,
         allowed_hosts=args.allowed_host,
@@ -134,6 +141,8 @@ class WebCli:
             else "only when another model is needed"
         )
         lines.append(f"  models:  keep {settings.cache_size} loaded, unload {unload}")
+        budget = MemoryGuard.resolve_limit(settings.max_memory_gb)
+        lines.append(f"  memory:  {budget:g} GB active budget, {budget / 4:g} GB buffer cache cap (--max-memory-gb)")
         lines.extend(f"  from:    {directory}" for directory in settings.models_dirs)
         lines.extend(f"  loras:   {directory}" for directory in settings.lora_dirs)
         if settings.auth_configured or settings.require_auth:
