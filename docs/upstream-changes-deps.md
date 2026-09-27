@@ -6,8 +6,7 @@ conflicts, and what can break silently even without a conflict. It is meant as a
 each sync with upstream.
 
 Latest sync (2026-09-27): upstream `80bae91`, merged without conflicts. The fork stays on
-`0.20.0+webui.1`; `v0.20.0-webui` remains the install target. See
-[WebUI update and testing notes](webui-0.20.0-update.md).
+`0.20.0+webui.1`; `v0.20.0-webui` remains the install target.
 
 | Upstream PR | Web UI impact |
 |---|---|
