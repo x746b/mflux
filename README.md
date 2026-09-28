@@ -17,7 +17,7 @@ This fork adds `mflux-web`, a small browser interface for mflux. I made it becau
 
 *The generate page after a run. Settings on the left; the result and the equivalent CLI command on the right ("Copy CLI command" gives it to you if you want to script it later). The top bar shows which model is loaded and how much memory it takes, with an Unload button next to it.*
 
-![Gallery](docs/Screenshot-4.png)
+![Gallery](docs/Screenshot-6.png)
 
 *The gallery. Click an image to see how it was made. "Reuse settings" puts everything, including the seed, back into the form.*
 
