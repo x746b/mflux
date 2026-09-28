@@ -25,6 +25,14 @@
     <div id="group-model" class="grid-2 wide"></div>
   </section>
 
+  <details class="field-group collapsible" id="lora-section">
+    <summary>LoRAs <span class="summary-note" id="lora-note"></span></summary>
+    <div id="lora-rows"></div>
+    <datalist id="lora-options"></datalist>
+    <button type="button" class="ghost small" id="add-lora">Add LoRA</button>
+    <small class="hint">Choose a local LoRA, or enter a path, Hugging Face repo, <code>repo:file.safetensors</code>, or library name.</small>
+  </details>
+
   <section class="field-group grid-2" id="group-basic"></section>
 
   <section class="field-group">
@@ -74,14 +82,6 @@
     <div id="reference-list" class="reference-list"></div>
   </details>
 
-  <details class="field-group collapsible" id="lora-section">
-    <summary>LoRAs <span class="summary-note" id="lora-note"></span></summary>
-    <div id="lora-rows"></div>
-    <datalist id="lora-options"></datalist>
-    <button type="button" class="ghost small" id="add-lora">Add LoRA</button>
-    <small class="hint">A file under <code>--lora-dir</code>, a Hugging Face repo, <code>repo:file.safetensors</code>, or a library name.</small>
-  </details>
-
   <details class="field-group collapsible">
     <summary>Memory</summary>
     <div id="group-memory" class="grid-2"></div>
@@ -128,5 +128,10 @@
     <ul id="job-list" class="job-list"></ul>
   </div>
 </section>
+{% include "chat.html" %}
 {% endblock %}
-{% block scripts %}<script src="/static/generate.js?v={{ static_version }}"></script>{% endblock %}
+{% block scripts %}
+<script src="/static/chat-preferences.js?v={{ static_version }}"></script>
+<script src="/static/chat.js?v={{ static_version }}"></script>
+<script src="/static/generate.js?v={{ static_version }}"></script>
+{% endblock %}

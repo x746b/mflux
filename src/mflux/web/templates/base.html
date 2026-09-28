@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}mflux{% endblock %}</title>
+  <script src="/static/appearance.js?v={{ static_version }}"></script>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v={{ static_version }}">
   <link rel="stylesheet" href="/static/app.css?v={{ static_version }}">
 </head>
@@ -14,6 +15,7 @@
     <nav class="tabs">
       <a href="/" class="{{ 'active' if page == 'generate' }}">Generate</a>
       <a href="/gallery" class="{{ 'active' if page == 'gallery' }}">Gallery</a>
+      <a href="/settings" class="{{ 'active' if page == 'settings' }}">Settings</a>
     </nav>
     <div class="topbar-right">
       {% if page == "generate" %}

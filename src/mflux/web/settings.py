@@ -78,3 +78,18 @@ class WebSettings:
     def load_persisted_api_key(self) -> None:
         if self.api_key_hash is None:
             self.api_key_hash = WebSettings.load_persisted(self.config_path).get("api_key_hash")
+
+    @staticmethod
+    def huggingface_status() -> dict:
+        from huggingface_hub.constants import HF_TOKEN_PATH
+
+        for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+            if os.environ.get(name, "").strip():
+                return {"status": "detected", "source": "environment"}
+        try:
+            detected = bool(Path(HF_TOKEN_PATH).read_text().strip())
+        except FileNotFoundError:
+            detected = False
+        except (OSError, UnicodeError):
+            return {"status": "unreadable", "source": None}
+        return {"status": "detected" if detected else "missing", "source": "login" if detected else None}

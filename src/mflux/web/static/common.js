@@ -36,6 +36,39 @@ const MF = (() => {
     return data;
   }
 
+  async function stream(path, json, signal, onEvent) {
+    if (csrf === null) await loadSession();
+    const response = await fetch(path, {
+      method: "POST", credentials: "same-origin", signal,
+      headers: { "Content-Type": "application/json", "X-MFlux-CSRF": csrf },
+      body: JSON.stringify(json),
+    });
+    if (!response.ok) {
+      if (response.status === 401) window.location.href = "/login";
+      const data = await response.json().catch(() => null);
+      throw new Error(typeof data?.detail === "string" ? data.detail : `Request failed (${response.status})`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (const line of lines) if (line.trim()) onEvent(JSON.parse(line));
+        if (done) {
+          if (buffer.trim()) onEvent(JSON.parse(buffer));
+          break;
+        }
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
+  }
+
   function toast(message, ms = 2600) {
     const el = document.getElementById("toast");
     if (!el) return;
@@ -123,5 +156,5 @@ const MF = (() => {
   }
 
   const ready = init();
-  return { api, toast, el, copy, ready, loadSession };
+  return { api, stream, toast, el, copy, ready, loadSession };
 })();

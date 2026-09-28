@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Settings · mflux{% endblock %}
+{% block main_class %}settings-layout{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<section class="panel" aria-labelledby="assistant-title">
+  <h2 id="assistant-title">Prompt assistant · OpenAI</h2>
+  <p id="openai-status" class="hint" role="status">Checking API key…</p>
+  <label class="field"><span class="label">Default chat model</span><select id="assistant-model"><option value="gpt-6-luna">GPT-6 Luna</option><option value="gpt-6-sol">GPT-6 Sol</option></select></label>
+  <label class="field"><span class="label">Style preferences</span><textarea id="assistant-instructions" rows="4" maxlength="4000" placeholder="For example: prefer cinematic photography, natural lighting, and concise prompts."></textarea></label>
+  <button type="button" class="ghost small" id="assistant-save">Save assistant preferences</button>
+  <p id="assistant-feedback" class="hint" role="status"></p>
+  <p class="hint">Preferences are saved in this browser. Chat uses your OpenAI API billing and sends only messages you submit; generated images are not attached.</p>
+  <details>
+    <summary>Set up the OpenAI API key</summary>
+    <p>Export <code>OPENAI_API_KEY</code> in the environment that starts <code>mflux-web</code>. For a terminal launch, you can add <code>export OPENAI_API_KEY="your-api-key"</code> to <code>~/.zshrc</code>, open a new terminal, and restart mflux-web there.</p>
+    <p>The Web UI inherits the exported variable; it does not read or execute shell configuration files. A background service needs the key configured in its own launch environment.</p>
+    <p>Keep the key outside this repository. No key is entered or stored in this page. Key detection does not verify billing or model access.</p>
+    <p><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">Manage OpenAI API keys</a></p>
+  </details>
+</section>
+<section class="panel" aria-labelledby="appearance-title">
+  <h2 id="appearance-title">Appearance</h2>
+  <p class="hint">Changes apply immediately and are remembered in this browser.</p>
+  <div class="grid-2">
+    <label class="field"><span class="label">Theme</span>
+      <select id="appearance-theme">
+        <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
+      </select>
+    </label>
+    <label class="field"><span class="label">Accent</span>
+      <select id="appearance-accent">
+        <option value="orange">Orange</option><option value="blue">Blue</option><option value="teal">Teal</option>
+      </select>
+    </label>
+  </div>
+  <p id="appearance-feedback" class="hint" role="status"></p>
+</section>
+<section class="panel" aria-labelledby="hf-title">
+  <div class="row-between"><h2 id="hf-title">Hugging Face access</h2><button type="button" id="settings-refresh" class="ghost small">Refresh status</button></div>
+  <p id="hf-status" role="status">Checking for a token…</p>
+  <p class="hint">This checks for a token on the machine running mflux. It does not verify the token or access to a particular model.</p>
+  <details id="hf-setup">
+    <summary>Set up Hugging Face access</summary>
+    <p>Public, ungated models usually work without a token. Gated or private downloads need a token with access to that model; gated models may also require accepting terms on their model page.</p>
+    <ol>
+      <li>On the machine running mflux, under the same user account, run <code>hf auth login</code> and follow the prompts.</li>
+      <li>If <code>hf</code> is unavailable, run <code>uvx --from huggingface-hub hf auth login</code>.</li>
+      <li>Return here and choose <strong>Refresh status</strong>.</li>
+    </ol>
+    <p>Alternatively, set <code>HF_TOKEN</code> in the environment that launches mflux, then restart the server. An environment token takes precedence over a saved login.</p>
+    <p><a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener noreferrer">Manage Hugging Face tokens</a> · <a href="https://huggingface.co/docs/huggingface_hub/en/quick-start#authentication" target="_blank" rel="noopener noreferrer">Authentication guide</a></p>
+  </details>
+</section>
+<section class="panel" aria-labelledby="runtime-title">
+  <h2 id="runtime-title">Runtime information</h2>
+  <p class="hint">Current server configuration. Change startup options and restart mflux to update these settings.</p>
+  <dl id="runtime-info" class="settings-runtime"></dl>
+</section>
+<p id="settings-error" class="error" role="alert" hidden></p>
+{% endblock %}
+{% block scripts %}
+<script src="/static/chat-preferences.js?v={{ static_version }}"></script>
+<script src="/static/settings.js?v={{ static_version }}"></script>
+{% endblock %}

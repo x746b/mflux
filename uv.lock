@@ -1079,6 +1079,7 @@ dependencies = [
 [package.optional-dependencies]
 web = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "itsdangerous" },
     { name = "jinja2" },
     { name = "python-multipart" },
@@ -1103,6 +1104,7 @@ requires-dist = [
     { name = "filelock", specifier = ">=3.20.1" },
     { name = "fonttools", specifier = ">=4.60.2" },
     { name = "hf-transfer", specifier = ">=0.1.9,<1.0" },
+    { name = "httpx", marker = "extra == 'web'", specifier = ">=0.28,<1.0" },
     { name = "huggingface-hub", specifier = ">=1.1.6,<2.0" },
     { name = "itsdangerous", marker = "extra == 'web'", specifier = ">=2.2,<3.0" },
     { name = "jinja2", marker = "extra == 'web'", specifier = ">=3.1,<4.0" },

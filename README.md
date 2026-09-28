@@ -65,6 +65,8 @@ WebUI Qwen 2.1 editing adoption and more:
 
 ### Good to know
 
+- **Prompt assistant.** The button beside Prompt opens an OpenAI chat panel. Choose GPT-6 Luna (default) or GPT-6 Sol. Use current prompt, Expand, Shorten, and Suggest variations prepare a draft; **Send** starts the API request. Replies stream, **Stop** cancels the connection, and **Use this prompt** inserts a proposed prompt after confirming replacement. Chat is kept only on the current page and clears on reload/navigation; **Clear chat** leaves your generation prompt untouched. API charges apply. Settings → Prompt assistant saves model/style preferences per browser and shows whether the server detects an API key.
+- **Settings.** The Settings tab shows whether the server detects a Hugging Face token, with login instructions if needed. This is a local presence check, not a validation of access; tokens are never displayed or stored by the Web UI. Choose System, Light, or Dark appearance and an Orange, Blue, or Teal accent; appearance is saved per browser. Runtime information lists loaded models, model/LoRA/output directories, the effective memory budget, and idle unload time. Use Refresh status to update this snapshot; change server options at startup.
 - **Built-in or Local folder.** "Built-in" downloads the model from Hugging Face, which for Qwen Image 2.1 is about 33 GB. If you already have the weights on disk, choose Local folder and set the base model (for example `qwen-image-2.1`).
 - **Sizes.** The small buttons are the usual sizes around 1 megapixel. "More sizes" has wider ratios (16:10, 21:9, 2.39:1, 32:9 and portrait versions), and "Resolution" scales them from 0.5 to 4 MP.
 - **Several images at once.** Put `1, 2, 3` in Seeds and you get three images from one run.
@@ -74,6 +76,22 @@ WebUI Qwen 2.1 editing adoption and more:
 - **Supported models.** Text-to-image, plus image-to-image and LoRAs, for FLUX.1, FLUX.2, Qwen Image, Qwen Image 2.1, Z-Image, Krea 2 and ERNIE-Image. Qwen Image 2.1 editing is also available; other edit commands, ControlNet, fill and upscaling are still CLI-only.
 - **Qwen 2.1 editing.** Choose **qwen 2.1 edit**, select your Qwen-Image-2.1 weights, and add up to 10 reference images. Their order matches “image 1”, “image 2”, etc. in your prompt. Leave width and height empty to derive the size from the last reference and the advanced **Output resolution** setting; explicit dimensions must be multiples of 32. RGBA output is saved as PNG. **Use KV cache** can be disabled in Advanced. Editing requires at least two steps and guidance of 1 or more; it does not support LoRAs yet.
 - **Quiet console.** The page polls the server all the time. Those requests are only logged with `--log-level debug`.
+
+### OpenAI prompt assistant setup
+
+The server reads `OPENAI_API_KEY` from its environment. For a terminal launch, add this line to your `~/.zshrc` using an editor, replacing the placeholder locally:
+
+```bash
+export OPENAI_API_KEY="your-api-key"
+```
+
+Open a new terminal, then start `mflux-web` with your usual options. An already-running server must be restarted to inherit the key. Alternatively, export the variable only in the shell used to start the server. Background services need their own environment configuration; the Web UI does not read or execute `~/.zshrc` or load `.env` files.
+
+Keep credentials outside the repository. The browser receives only key-presence status, never the key. Opening the assistant or Settings makes no paid request. Sending a chat message uses your API project; anybody permitted to use this Web UI can use its configured assistant. No image, local model path, or generation prompt is automatically attached. Requests use the Responses API with `store=false`, no tools, low reasoning, and bounded context/output; conversation history is explicitly resent with each turn.
+
+The assistant currently supports `gpt-6-luna` and `gpt-6-sol`. Access depends on your API project. Provider errors are shown without exposing provider diagnostics or credentials. Cancelling closes the stream; work already processed may still be billed.
+
+Reference: [OpenAI API setup](https://developers.openai.com/api/docs/quickstart) and [streaming responses](https://developers.openai.com/api/docs/guides/streaming-responses).
 
 ### Using it from another machine
 

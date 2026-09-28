@@ -1,0 +1,27 @@
+<aside id="prompt-chat" class="chat-panel panel" aria-labelledby="chat-title" hidden>
+  <div class="row-between">
+    <h2 id="chat-title">Prompt assistant</h2>
+    <button type="button" id="chat-close" class="ghost small" aria-label="Close prompt assistant">Close</button>
+  </div>
+  <p class="hint">OpenAI · Messages are sent when you press Send. Chat stays on this page and clears on reload.</p>
+  <label class="field"><span class="label">Chat model</span><select id="chat-model" aria-label="Chat model"></select></label>
+  <p id="chat-key-status" class="hint" role="status">Checking configuration…</p>
+  <div id="chat-messages" class="chat-messages" role="log" aria-label="Prompt conversation" aria-live="polite"></div>
+  <div class="chat-quick-actions">
+    <button type="button" class="ghost small" id="chat-use-current">Use current prompt</button>
+    <button type="button" class="ghost small" data-chat-action="Expand this prompt while preserving its intent">Expand</button>
+    <button type="button" class="ghost small" data-chat-action="Shorten this prompt while preserving its key details">Shorten</button>
+    <button type="button" class="ghost small" data-chat-action="Suggest three variations of this prompt">Suggest variations</button>
+  </div>
+  <form id="chat-form">
+    <label class="field"><span class="label">Your message</span><textarea id="chat-input" rows="4" maxlength="12000" placeholder="Describe an idea, or ask how to refine a prompt…"></textarea></label>
+    <div class="chat-quick-actions">
+      <button type="submit" id="chat-send" class="primary" disabled>Send</button>
+      <button type="button" id="chat-stop" class="ghost" hidden>Stop</button>
+      <button type="button" id="chat-clear" class="ghost">Clear chat</button>
+      <a href="/settings">Settings</a>
+    </div>
+  </form>
+  <p id="chat-status" class="hint" role="status"></p>
+  <p id="chat-error" class="error" role="alert" hidden></p>
+</aside>

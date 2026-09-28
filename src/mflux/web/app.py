@@ -3,6 +3,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
 import secrets
 import time
 from pathlib import Path
@@ -13,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from mflux.web.auth import REMEMBER_ME_MAX_AGE, SESSION_COOKIE_NAME, SESSION_MAX_AGE, LoginThrottle, WebAuth
+from mflux.web.chat import PromptChat
 from mflux.web.invocation import Invocation, InvocationError
 from mflux.web.network import NetworkPolicy
 from mflux.web.paths import PathGuard, PathRejected
@@ -42,6 +44,7 @@ class WebApp:
         self.throttle = LoginThrottle()
         self.guard = PathGuard(settings.output_dir, settings.upload_dir, settings.models_dirs, settings.lora_dirs)
         self.schema = FormSchema()
+        self.chat = PromptChat()
         self.runner = runner or JobRunner(
             cache_size=settings.cache_size,
             idle_unload_seconds=settings.idle_unload_minutes * 60,
@@ -69,6 +72,8 @@ class WebApp:
         app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
         app.middleware("http")(self._guard_request)
         self._register_pages(app)
+        self._register_settings_api(app)
+        self._register_chat_api(app)
         self._register_auth_api(app)
         self._register_generation_api(app)
         self._register_gallery_api(app)
@@ -140,6 +145,10 @@ class WebApp:
         def gallery(request: Request):
             return self.templates.TemplateResponse(request, "gallery.html", {"page": "gallery"})
 
+        @app.get("/settings")
+        def settings(request: Request):
+            return self.templates.TemplateResponse(request, "settings.html", {"page": "settings"})
+
         @app.get("/login")
         def login(request: Request):
             if not self.auth_required:
@@ -157,6 +166,50 @@ class WebApp:
         @app.get("/favicon.svg")
         def favicon():
             return FileResponse(WEB_DIR / "static" / "favicon.svg", media_type="image/svg+xml")
+
+    def _register_chat_api(self, app: FastAPI) -> None:
+        @app.get("/api/chat/config")
+        def chat_config():
+            return PromptChat.status()
+
+        @app.post("/api/chat")
+        async def chat(request: Request):
+            raw = bytearray()
+            async for chunk in request.stream():
+                raw.extend(chunk)
+                if len(raw) > 320000:
+                    raise HTTPException(413, "Chat request is too large.")
+            try:
+                body = json.loads(raw)
+            except (ValueError, UnicodeError) as exc:
+                raise HTTPException(400, "Invalid chat request.") from exc
+            if not isinstance(body, dict):
+                raise HTTPException(400, "Invalid chat request.")
+            payload = PromptChat.validate(body)
+            key = os.environ.get("OPENAI_API_KEY", "").strip()
+            if not key:
+                raise HTTPException(503, "Set OPENAI_API_KEY in the server environment and restart mflux-web.")
+            return StreamingResponse(
+                self.chat.stream(payload, key), media_type="application/x-ndjson",
+                headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+            )
+
+    def _register_settings_api(self, app: FastAPI) -> None:
+        @app.get("/api/settings")
+        def settings():
+            status = self.runner.status()
+            return {
+                "huggingface": WebSettings.huggingface_status(),
+                "runtime": {
+                    "models_dirs": [str(path) for path in self.guard.models_dirs],
+                    "lora_dirs": [str(path) for path in self.guard.lora_dirs],
+                    "output_dir": str(self.guard.output_dir),
+                    "cached_models": status["cached_models"],
+                    "max_memory_gb": status["max_memory_gb"],
+                    "max_cache_gb": status["max_cache_gb"],
+                    "idle_unload_minutes": self.runner.idle_unload_seconds / 60,
+                },
+            }
 
     def _register_auth_api(self, app: FastAPI) -> None:
         @app.get("/api/session")
@@ -214,6 +267,7 @@ class WebApp:
             return {
                 "commands": self.schema.commands(),
                 "local_models": self.guard.list_local_models(),
+                "default_model_source": "local" if self.settings.models_dirs else "builtin",
                 "local_loras": self.guard.list_local_loras(),
             }
 

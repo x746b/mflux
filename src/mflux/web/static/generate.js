@@ -58,6 +58,7 @@
     state.command = spec;
     $("command").value = name;
     $("command-description").textContent = spec.description || "";
+    document.querySelector(`input[name="model-source"][value="${state.defaultModelSource || "builtin"}"]`).checked = true;
 
     $("model-builtin").replaceChildren(...spec.models.map((m) => el("option", { value: m.name, text: m.name })));
     $("model-local").replaceChildren(...state.localModels.map((m) => el("option", { value: m.path, text: m.name })));
@@ -78,7 +79,7 @@
     $("references-section").hidden = !spec.fields.some((f) => f.flag === "--image-paths");
     $("lora-section").hidden = !hasLora;
     $("lora-rows").replaceChildren();
-    $("lora-options").replaceChildren(...state.localLoras.map((l) => el("option", { value: l.path, text: l.name })));
+    $("lora-options").replaceChildren(...state.localLoras.map((l) => el("option", { value: l.label })));
     updateModelSource();
     updateStepsPlaceholder();
     updatePresetHighlight();
@@ -92,7 +93,7 @@
 
     if (field.widget === "checkbox") {
       const input = el("input", { ...common, type: "checkbox" });
-      input.checked = field.default === true;
+      input.checked = field.flag !== "--bake-lora" && field.default === true;
       return el("label", { class: "check wide", title: field.help }, input, el("span", { text: field.label }), status);
     }
 
@@ -108,7 +109,13 @@
       input = el("input", { ...common, placeholder: field.default ?? "auto" });
     }
     const wide = field.widget === "textarea" || field.flag === "--base-model" ? " wide" : "";
-    return el("label", { class: `field${wide}`, "data-field": field.flag }, el("span", { class: "label" }, el("span", { text: field.label }), status), input, field.widget === "textarea" ? null : hint);
+    const label = el("label", { class: "label", for: id }, el("span", { text: field.label }), status);
+    const heading = field.flag === "--prompt"
+      ? el("div", { class: "row-between" }, label, el("button", {
+        type: "button", class: "ghost small", text: "Prompt assistant", "aria-controls": "prompt-chat",
+        onclick: () => window.dispatchEvent(new Event("mflux-open-chat")),
+      })) : label;
+    return el("div", { class: `field${wide}`, "data-field": field.flag }, heading, input, field.widget === "textarea" ? null : hint);
   }
 
   function renderSizePicker() {
@@ -224,8 +231,9 @@
   }
 
   function addLoraRow(path = "", scale = 1.0) {
+    const value = state.localLoras.find((l) => l.path === path)?.label || path;
     const row = el("div", { class: "lora-row" },
-      el("input", { class: "lora-path", list: "lora-options", placeholder: "path, org/repo, or name", value: path }),
+      el("input", { class: "lora-path", list: "lora-options", placeholder: "Choose LoRA or enter path / repo / name", value }),
       el("input", { class: "lora-scale", type: "number", step: "0.05", min: "-4", max: "4", value: scale }),
       el("button", { type: "button", class: "ghost small", text: "Remove", onclick: () => { row.remove(); updateNotes(); } }),
     );
@@ -257,7 +265,8 @@
     const seeds = seedsText ? seedsText.split(/[\s,]+/).filter(Boolean) : [];
     const loras = [...document.querySelectorAll(".lora-row")]
       .map((row) => ({ path: row.querySelector(".lora-path").value.trim(), scale: Number(row.querySelector(".lora-scale").value || 1) }))
-      .filter((l) => l.path);
+      .filter((l) => l.path)
+      .map((l) => ({ ...l, path: state.localLoras.find((local) => local.label === l.path)?.path || l.path }));
     return {
       command: state.command.command,
       model: modelValue ? { source, value: modelValue } : null,
@@ -573,7 +582,7 @@
 
   function clearStoredDrafts() {
     try {
-      Object.keys(localStorage).filter((key) => key.startsWith(STORAGE_PREFIX)).forEach((key) => localStorage.removeItem(key));
+      Object.keys(localStorage).filter((key) => key.startsWith(`${STORAGE_PREFIX}form:`) || [REUSE_KEY, LAST_COMMAND_KEY].includes(key)).forEach((key) => localStorage.removeItem(key));
     } catch { /* storage may be unavailable */ }
     state.skipSave = true;
   }
@@ -663,7 +672,21 @@
     const data = await MF.api("/api/commands");
     state.commands = data.commands;
     state.localModels = data.local_models;
+    state.defaultModelSource = data.default_model_source || "builtin";
     state.localLoras = data.local_loras;
+    const reservedNames = new Set(state.localLoras.map((l) => l.name));
+    const labels = new Set();
+    for (const lora of state.localLoras) {
+      let label = lora.name;
+      let suffix = 2;
+      if (labels.has(label)) {
+        do {
+          label = `${lora.name} (${suffix++})`;
+        } while (labels.has(label) || reservedNames.has(label));
+      }
+      lora.label = label;
+      labels.add(label);
+    }
     renderCommandSelect();
     wire();
 
