@@ -34,7 +34,7 @@ The optional prompt assistant helps develop ideas using local oMLX inference or 
 Install this fork with the `web` extra (this replaces an existing `uv tool` install of mflux):
 
 ```bash
-uv tool install --force --refresh --python 3.14 "mflux[web] @ git+https://github.com/x746b/mflux@v0.20.0-webui"
+uv tool install --force --refresh --python 3.14 "mflux[web] @ git+https://github.com/x746b/mflux@main"
 ```
 
 #### Run
