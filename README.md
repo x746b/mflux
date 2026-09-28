@@ -13,11 +13,11 @@ Run the latest state-of-the-art generative image models locally on your Mac in n
 
 This fork adds `mflux-web`, a small browser interface for mflux. I made it because I got tired of typing commands like this every time I wanted to try a new prompt. Now I pick the model, type the prompt and press Generate. It runs the same code as the CLI: the form is built from each command's own options, and every request goes through the command's own argument parser, so the UI accepts exactly what the CLI accepts. The model also stays loaded between runs. The first image has to wait for the weights to load, the next ones start generating right away.
 
-![Generate page after a run](docs/Screenshot-3.png)
+![Generate page after a run](docs/Screenshot-1.png)
 
 *The generate page after a run. Settings on the left; the result and the equivalent CLI command on the right ("Copy CLI command" gives it to you if you want to script it later). The top bar shows which model is loaded and how much memory it takes, with an Unload button next to it.*
 
-![Gallery](docs/Screenshot-6.png)
+![Gallery](docs/Screenshot-2.png)
 
 *The gallery. Click an image to see how it was made. "Reuse settings" puts everything, including the seed, back into the form.*
 
@@ -49,17 +49,14 @@ and open http://127.0.0.1:8001.
 
 ---
 
-### News 2026-09-27
+### News
 
-WebUI Qwen 2.1 editing adoption and more:
-
-1. Review notes and merge upstream main (PRs 758, 768, 741, 747, 774), preserving fork patches.
-2. Add worker memory budget, lifetime cache cap, step checks and retained-memory eviction; avoid retaining exception tracebacks; version assets and revalidate browser caches.
-3. Add Qwen 2.1 edit adapter and validated ordered reference uploads, preserve uploads across family switches and protect references used by active jobs during history clearing.
-4. Verify fake-model memory regressions, adapter/CLI parity, Python 3.14 help and web tests, relevant upstream tests, browser upload/cache behavior, and built-wheel server startup.
-5. Update documentation, commit phases, push main and update v0.20.0-webui for existing reinstall command.
-
-![Qwen 2.1 editing adoption](docs/Screenshot-5.png)
+- **OpenAI prompt assistant:** discuss ideas with GPT-6 Luna or GPT-6 Sol, expand or shorten prompts, and insert suggestions into the generation form.
+- **Settings tab:** choose System, Light, or Dark appearance with Orange, Blue, or Teal accents. Check Hugging Face and OpenAI key status, loaded models, directories, memory limits, and idle unload time.
+- **Easier LoRA selection:** LoRAs sit directly below the model controls and display paths relative to `--lora-dir`. Bake LoRA into weights is unchecked by default.
+- **Local weights by default:** starting with `--models-dir` selects Local folder for fresh or reset forms. Saved selections still take precedence.
+- **Qwen Image 2.1 editing:** use up to 10 ordered reference images, keep uploads when switching model families, and reuse settings from the gallery.
+- **Memory controls:** configure an active-memory budget and idle unloading, monitor memory in the top bar, and unload cached models when needed.
 
 ---
 
@@ -67,12 +64,13 @@ WebUI Qwen 2.1 editing adoption and more:
 
 - **Prompt assistant.** The button beside Prompt opens an OpenAI chat panel. Choose GPT-6 Luna (default) or GPT-6 Sol. Use current prompt, Expand, Shorten, and Suggest variations prepare a draft; **Send** starts the API request. Replies stream, **Stop** cancels the connection, and **Use this prompt** inserts a proposed prompt after confirming replacement. Chat is kept only on the current page and clears on reload/navigation; **Clear chat** leaves your generation prompt untouched. API charges apply. Settings → Prompt assistant saves model/style preferences per browser and shows whether the server detects an API key.
 - **Settings.** The Settings tab shows whether the server detects a Hugging Face token, with login instructions if needed. This is a local presence check, not a validation of access; tokens are never displayed or stored by the Web UI. Choose System, Light, or Dark appearance and an Orange, Blue, or Teal accent; appearance is saved per browser. Runtime information lists loaded models, model/LoRA/output directories, the effective memory budget, and idle unload time. Use Refresh status to update this snapshot; change server options at startup.
-- **Built-in or Local folder.** "Built-in" downloads the model from Hugging Face, which for Qwen Image 2.1 is about 33 GB. If you already have the weights on disk, choose Local folder and set the base model (for example `qwen-image-2.1`).
+- **Built-in or Local folder.** "Built-in" downloads the model from Hugging Face. With `--models-dir`, fresh or reset forms default to Local folder; set the base model to match the checkpoint (for example `qwen-image-2.1`). Saved form selections take precedence over defaults.
+- **LoRAs.** The LoRA section is directly below Base model and Quantize. Local choices show paths relative to `--lora-dir`, with numbered labels for duplicate names across directories. Full paths are retained for generation. You can also enter a path, Hugging Face repository, or library name. **Bake LoRA into weights** is unchecked by default; saved settings can restore a previous choice.
 - **Sizes.** The small buttons are the usual sizes around 1 megapixel. "More sizes" has wider ratios (16:10, 21:9, 2.39:1, 32:9 and portrait versions), and "Resolution" scales them from 0.5 to 4 MP.
 - **Several images at once.** Put `1, 2, 3` in Seeds and you get three images from one run.
 - **No scrolling to the button.** Generate is also in the top bar, and Cmd/Ctrl+Enter works anywhere in the form.
 - **Memory.** The active MLX memory budget defaults to 75% of RAM; set `--max-memory-gb 64` to lower it when other apps or an LLM also need memory. The buffer cache stays capped at 25% of that budget. Jobs stop at callback checkpoints if active memory exceeds the budget, queued jobs are cancelled, and cached models unload. Retained-memory growth also triggers unloading between jobs. This is a soft guard, not a hard process-memory ceiling. The top-bar tooltip shows both limits. Use `--cache-size 0` to unload after every run, or `--idle-unload MINUTES` to change the default 10-minute idle timeout.
-- **History.** Recent jobs are kept only in memory and are gone when the server stops. "Clear history" drops finished jobs, unused uploads and browser drafts. References still needed by queued or running jobs are kept. Images in the gallery stay until you delete them there.
+- **History.** Recent jobs are kept only in memory and are gone when the server stops. "Clear history" drops finished jobs, unused uploads and saved generation drafts. Appearance and assistant preferences are kept, as are references needed by queued or running jobs. Images in the gallery stay until you delete them there. Use **Clear chat** separately to reset the prompt conversation.
 - **Supported models.** Text-to-image, plus image-to-image and LoRAs, for FLUX.1, FLUX.2, Qwen Image, Qwen Image 2.1, Z-Image, Krea 2 and ERNIE-Image. Qwen Image 2.1 editing is also available; other edit commands, ControlNet, fill and upscaling are still CLI-only.
 - **Qwen 2.1 editing.** Choose **qwen 2.1 edit**, select your Qwen-Image-2.1 weights, and add up to 10 reference images. Their order matches “image 1”, “image 2”, etc. in your prompt. Leave width and height empty to derive the size from the last reference and the advanced **Output resolution** setting; explicit dimensions must be multiples of 32. RGBA output is saved as PNG. **Use KV cache** can be disabled in Advanced. Editing requires at least two steps and guidance of 1 or more; it does not support LoRAs yet.
 - **Quiet console.** The page polls the server all the time. Those requests are only logged with `--log-level debug`.
