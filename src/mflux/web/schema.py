@@ -1,6 +1,11 @@
+import logging
 import threading
+import time
+from collections.abc import Callable
 
 from mflux.web.adapters import ADAPTERS
+
+logger = logging.getLogger("mflux.web")
 
 
 class FormSchema:
@@ -52,13 +57,23 @@ class FormSchema:
         self._cache: dict[str, dict] = {}
         self._lock = threading.Lock()
 
-    def commands(self) -> list[dict]:
-        return [self.command(name) for name in ADAPTERS]
+    def commands(self, progress: Callable[[str, int, int], None] | None = None) -> list[dict]:
+        commands = []
+        for index, name in enumerate(ADAPTERS):
+            if progress is not None:
+                progress(name, index, len(ADAPTERS))
+            commands.append(self.command(name))
+        return commands
 
     def command(self, name: str) -> dict:
         with self._lock:
             if name not in self._cache:
+                started = time.perf_counter()
                 self._cache[name] = FormSchema._build(name)
+                logger.info(
+                    "Command schema: %s took %.3fs (available=%s)",
+                    name, time.perf_counter() - started, self._cache[name].get("available", False),
+                )
             return self._cache[name]
 
     def fields_by_flag(self, name: str) -> dict[str, dict]:

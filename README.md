@@ -7,19 +7,25 @@
 
 # About
 
-Run the latest state-of-the-art generative image models locally on your Mac in native MLX! This fork adds `mflux-web`, a small browser interface for mflux
+mflux runs generative image models locally on Apple silicon using MLX. This fork adds `mflux-web`, a lightweight browser interface for generating images, exploring prompt ideas, and browsing results.
 
 ## Web UI
 
-This fork adds `mflux-web`, a small browser interface for mflux. I made it because I got tired of typing commands like this every time I wanted to try a new prompt. Now I pick the model, type the prompt and press Generate. It runs the same code as the CLI: the form is built from each command's own options, and every request goes through the command's own argument parser, so the UI accepts exactly what the CLI accepts. The model also stays loaded between runs. The first image has to wait for the weights to load, the next ones start generating right away.
+I built the UI because I wanted to try new prompts without typing long commands each time. Pick a model, write a prompt, and press **Generate**. The forms are built from the supported CLI commands' options, and requests are validated by those commands' own argument parsers. With model caching enabled, weights stay loaded between runs so repeated generations can skip the loading step.
 
-![Generate page after a run](docs/Screenshot-1.png)
+The optional prompt assistant helps develop ideas using local oMLX inference or the OpenAI API. A startup progress bar shows which command options or local files are being loaded, while the gallery keeps generated images and their settings easy to revisit.
 
-*The generate page after a run. Settings on the left; the result and the equivalent CLI command on the right ("Copy CLI command" gives it to you if you want to script it later). The top bar shows which model is loaded and how much memory it takes, with an Unload button next to it.*
+![Generate page with the local oMLX prompt assistant](docs/Screenshot-1.png)
 
-![Gallery](docs/Screenshot-2.png)
+*Generate with the local oMLX prompt assistant. Generation controls are on the left; the result and equivalent CLI command are on the right. Use **Copy CLI command** to take a run back to the terminal. The top bar shows worker status and memory use, with an **Unload** button when a cached model can be released.*
 
-*The gallery. Click an image to see how it was made. "Reuse settings" puts everything, including the seed, back into the form.*
+![Generate page with the OpenAI prompt assistant](docs/Screenshot-2.png)
+
+*The same prompt assistant connected to OpenAI, with GPT-6 Luna and GPT-6 Sol available. **Use this prompt** transfers a suggestion into the generation form. Each provider keeps its own conversation and draft.*
+
+![Gallery](docs/Screenshot-3.png)
+
+*The gallery. Open an image to inspect its generation settings, download it, or use **Reuse settings** to restore its options and seed in the form.*
 
 ---
 
@@ -31,19 +37,15 @@ Install this fork with the `web` extra (this replaces an existing `uv tool` inst
 uv tool install --force --refresh --python 3.14 "mflux[web] @ git+https://github.com/x746b/mflux@v0.20.0-webui"
 ```
 
-#### Simple run
+#### Run
 
 ```bash
-mflux-web --models-dir ~/AI/models --output-dir ~/AI/mflux-web/outputs
+mflux-web --models-dir ~/AI/models/_diffusers_ --lora-dir ~/AI/models/_diffusers_/_LoRAs_ --output-dir ~/AI/mflux-web/outputs --max-memory-gb 110 --cache-size 0
 ```
 
-#### With LoRA
+Then open http://127.0.0.1:8001.
 
-```bash
-mflux-web --models-dir ~/AI/models --lora-dir ~/AI/models/_LoRAs_ --output-dir ~/AI/mflux-web/outputs --max-memory-gb 96 --cache-size 0
-```
-
-and open http://127.0.0.1:8001.
+Adjust the paths and memory budget to suit your machine. The example uses `--cache-size 0` to unload weights after each run; omit it to keep a model cached for repeated generations.
 
 `--models-dir` is the folder where you keep downloaded checkpoints. Each subfolder shows up under Weights → Local folder. Generated images land in `--output-dir`, each with a small JSON file holding its settings; that is what the gallery reads.
 
@@ -51,8 +53,9 @@ and open http://127.0.0.1:8001.
 
 ### News
 
-- **OpenAI prompt assistant:** discuss ideas with GPT-6 Luna or GPT-6 Sol, expand or shorten prompts, and insert suggestions into the generation form.
-- **Settings tab:** choose System, Light, or Dark appearance with Orange, Blue, or Teal accents. Check Hugging Face and OpenAI key status, loaded models, directories, memory limits, and idle unload time.
+- **Prompt assistant:** discuss ideas with GPT-6 Luna, GPT-6 Sol, or an oMLX model, expand or shorten prompts, and insert suggestions into the generation form. Enable or disable the assistant in Settings.
+- **Settings tab:** choose System, Light, or Dark appearance with Orange, Blue, or Teal accents. Select the assistant provider and check its configuration, Hugging Face token status, loaded models, directories, memory limits, and idle unload time.
+- **Startup progress:** see which command is loading, followed by model-folder and LoRA scans, with elapsed time and a progress bar. Detailed timings are available in the server log.
 - **Easier LoRA selection:** LoRAs sit directly below the model controls and display paths relative to `--lora-dir`. Bake LoRA into weights is unchecked by default.
 - **Local weights by default:** starting with `--models-dir` selects Local folder for fresh or reset forms. Saved selections still take precedence.
 - **Qwen Image 2.1 editing:** use up to 10 ordered reference images, keep uploads when switching model families, and reuse settings from the gallery.
@@ -62,7 +65,7 @@ and open http://127.0.0.1:8001.
 
 ### Good to know
 
-- **Prompt assistant.** The button beside Prompt opens an OpenAI chat panel. Choose GPT-6 Luna (default) or GPT-6 Sol. Use current prompt, Expand, Shorten, and Suggest variations prepare a draft; **Send** starts the API request. Replies stream, **Stop** cancels the connection, and **Use this prompt** inserts a proposed prompt after confirming replacement. Chat is kept only on the current page and clears on reload/navigation; **Clear chat** leaves your generation prompt untouched. API charges apply. Settings → Prompt assistant saves model/style preferences per browser and shows whether the server detects an API key.
+- **Prompt assistant.** Enabled by default; uncheck **Enable prompt assistant** in Settings to hide its button and stop active replies in tabs of this browser. Choose OpenAI with GPT-6 Luna (default) or GPT-6 Sol, or oMLX with the model configured on the server. **Use current prompt**, **Expand**, **Shorten**, and **Suggest variations** prepare a draft; **Send** starts the request. Replies stream, **Stop** cancels the connection, and **Use this prompt** inserts a suggestion after confirming replacement. Each provider has its own in-memory history and draft, so switching providers does not transfer conversations. Chat clears on reload/navigation; **Clear chat** resets only the selected provider's history and leaves the generation prompt untouched. Settings saves provider/model/style preferences per browser. OpenAI API charges apply; oMLX uses its configured inference server.
 - **Settings.** The Settings tab shows whether the server detects a Hugging Face token, with login instructions if needed. This is a local presence check, not a validation of access; tokens are never displayed or stored by the Web UI. Choose System, Light, or Dark appearance and an Orange, Blue, or Teal accent; appearance is saved per browser. Runtime information lists loaded models, model/LoRA/output directories, the effective memory budget, and idle unload time. Use Refresh status to update this snapshot; change server options at startup.
 - **Built-in or Local folder.** "Built-in" downloads the model from Hugging Face. With `--models-dir`, fresh or reset forms default to Local folder; set the base model to match the checkpoint (for example `qwen-image-2.1`). Saved form selections take precedence over defaults.
 - **LoRAs.** The LoRA section is directly below Base model and Quantize. Local choices show paths relative to `--lora-dir`, with numbered labels for duplicate names across directories. Full paths are retained for generation. You can also enter a path, Hugging Face repository, or library name. **Bake LoRA into weights** is unchecked by default; saved settings can restore a previous choice.
@@ -71,9 +74,11 @@ and open http://127.0.0.1:8001.
 - **No scrolling to the button.** Generate is also in the top bar, and Cmd/Ctrl+Enter works anywhere in the form.
 - **Memory.** The active MLX memory budget defaults to 75% of RAM; set `--max-memory-gb 64` to lower it when other apps or an LLM also need memory. The buffer cache stays capped at 25% of that budget. Jobs stop at callback checkpoints if active memory exceeds the budget, queued jobs are cancelled, and cached models unload. Retained-memory growth also triggers unloading between jobs. This is a soft guard, not a hard process-memory ceiling. The top-bar tooltip shows both limits. Use `--cache-size 0` to unload after every run, or `--idle-unload MINUTES` to change the default 10-minute idle timeout.
 - **History.** Recent jobs are kept only in memory and are gone when the server stops. "Clear history" drops finished jobs, unused uploads and saved generation drafts. Appearance and assistant preferences are kept, as are references needed by queued or running jobs. Images in the gallery stay until you delete them there. Use **Clear chat** separately to reset the prompt conversation.
+- **Queue capacity.** Up to 16 pending generation jobs can wait behind the running job. Further submissions receive a queue-full message and can be retried later. Each job can still contain several seeds.
 - **Supported models.** Text-to-image, plus image-to-image and LoRAs, for FLUX.1, FLUX.2, Qwen Image, Qwen Image 2.1, Z-Image, Krea 2 and ERNIE-Image. Qwen Image 2.1 editing is also available; other edit commands, ControlNet, fill and upscaling are still CLI-only.
 - **Qwen 2.1 editing.** Choose **qwen 2.1 edit**, select your Qwen-Image-2.1 weights, and add up to 10 reference images. Their order matches “image 1”, “image 2”, etc. in your prompt. Leave width and height empty to derive the size from the last reference and the advanced **Output resolution** setting; explicit dimensions must be multiples of 32. RGBA output is saved as PNG. **Use KV cache** can be disabled in Advanced. Editing requires at least two steps and guidance of 1 or more; it does not support LoRAs yet.
 - **Quiet console.** The page polls the server all the time. Those requests are only logged with `--log-level debug`.
+- **Initial loading.** The Generate page shows the command currently loading, then the model-folder and LoRA scans, with elapsed time and a progress bar. Progress counts completed discovery steps, not estimated time remaining. The server logs how long each command schema takes on its first build, followed by totals for schema setup, model-folder discovery, and LoRA scanning. Shared dependency imports count toward the first command that needs them; later requests reuse cached schemas. If loading fails, the page shows an error and a reload button.
 
 ### OpenAI prompt assistant setup
 
@@ -89,7 +94,30 @@ Keep credentials outside the repository. The browser receives only key-presence 
 
 The assistant currently supports `gpt-6-luna` and `gpt-6-sol`. Access depends on your API project. Provider errors are shown without exposing provider diagnostics or credentials. Cancelling closes the stream; work already processed may still be billed.
 
+Chat requests have an overall deadline of two minutes for OpenAI and five minutes for oMLX, including model loading and response streaming. A timeout closes the upstream connection and frees the chat slot. Responses are limited to 2 MiB in total, with individual SSE lines and events limited to 256 KiB before JSON parsing. Streaming requests use uncompressed responses so these limits also bound decoding buffers.
+
 Reference: [OpenAI API setup](https://developers.openai.com/api/docs/quickstart) and [streaming responses](https://developers.openai.com/api/docs/guides/streaming-responses).
+
+### oMLX prompt assistant setup
+
+Add these exports to the environment that launches `mflux-web`, for example in `~/.zshrc`. Replace the key placeholder locally and use the exact model name or alias shown in oMLX:
+
+```bash
+export OMLX_API_KEY="your-omlx-api-key"
+export OMLX_MFLUX_MODEL="Qwen3.6-35B-A3B-8bit"
+# Optional: this is the default API base address.
+export OMLX_BASE_URL="http://127.0.0.1:8000/v1"
+```
+
+Open a new terminal and restart `mflux-web`, then choose **oMLX** in Settings → Prompt assistant or in the chat panel. Both the key and model variable are required. oMLX must be running and recognize the configured model. The Web UI inherits exported variables; it does not source `~/.zshrc` or store credentials in the browser.
+
+Plain HTTP is allowed only for loopback addresses or `localhost`; `localhost` is normalized to `127.0.0.1`. For an oMLX server on another machine, use an HTTPS API base URL with a valid certificate. Redirects are not followed.
+
+Both providers share the assistant's instructions, style preferences, prompt actions, and context/output limits. oMLX uses streaming Chat Completions and requests non-thinking replies for responsive prompt editing. Its response timeout allows additional time for local model loading. Opening Settings or the assistant only checks configuration locally; it does not contact the inference server or load models. Missing oMLX configuration or a connection failure never falls back to OpenAI automatically.
+
+The enable switch is a browser preference, not a server access control. Normal Web UI authentication still protects both chat backends. Local inference shares system memory with image generation; mflux does not manage oMLX's model cache.
+
+Reference: [oMLX documentation](https://github.com/jundot/omlx).
 
 ### Using it from another machine
 
@@ -111,11 +139,15 @@ This is plain HTTP, so for anything beyond your home network put TLS in front. W
 
 Whatever you choose, the UI only reads models from `--models-dir` (and LoRAs from `--lora-dir`) and only writes to `--output-dir`. It cannot be pointed at other files on the machine. `mflux-web --help` lists every option.
 
+Login and bearer-key authentication share failed-attempt throttling. Requests exceeding the authentication or queue limit return HTTP 429 with a `Retry-After` header. Incoming request bodies are limited before parsing: 16 KiB for login/setup, 256 KiB for ordinary JSON requests, 320,000 bytes for chat, and the configured upload size plus 1 MiB of multipart overhead for uploads. The individual uploaded image must still fit `--max-upload-mb`. Oversized bodies return HTTP 413.
+
 ### Keeping up with upstream
 
 The web UI lives almost entirely in new files, so merging upstream mflux is mostly painless. [docs/upstream-changes-deps.md](docs/upstream-changes-deps.md) lists the few upstream files this fork changes, which upstream code the UI depends on, and the steps for each sync.
 
 ---
+
+## Original README
 
 ### Table of contents
 

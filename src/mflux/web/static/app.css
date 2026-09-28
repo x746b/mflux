@@ -135,6 +135,10 @@ main { padding: 20px; max-width: 2400px; margin: 0 auto; }
 .panel + .panel { margin-top: 16px; }
 .panel-title { font-weight: 600; margin-bottom: 8px; }
 .form-panel { position: sticky; top: 64px; max-height: calc(100vh - 84px); overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+#generate-controls { margin: 0; padding: 0; border: 0; min-width: 0; }
+.loading-status { padding: 12px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--accent-soft); }
+.loading-status button { margin-top: 8px; }
+.loading-status progress { display: block; width: 100%; height: 6px; margin-top: 10px; accent-color: var(--accent); }
 
 .field-group { border-bottom: 1px solid var(--border); padding: 12px 0; }
 .field-group:first-child { padding-top: 0; }
@@ -149,6 +153,8 @@ main { padding: 20px; max-width: 2400px; margin: 0 auto; }
 .grid-2 > .check { margin-top: 26px; }
 .grid-2 > .check.wide { margin-top: 0; }
 .row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.prompt-heading { margin-bottom: 10px; }
+.prompt-heading > .label { margin-bottom: 0; }
 
 input, select, textarea, button, .button { font: inherit; color: inherit; }
 input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), select, textarea {
@@ -177,6 +183,7 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 button.primary:hover { filter: brightness(1.06); background: var(--accent); }
 button.ghost, .button.ghost { background: transparent; }
 button.small, .button.small { padding: 4px 10px; font-size: 12px; }
+button.prompt-assistant-launcher { padding: 6px 14px; font-size: 13px; }
 button.danger { color: var(--danger); }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .actions .primary { flex: 1; min-width: 140px; }

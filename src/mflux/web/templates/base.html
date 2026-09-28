@@ -19,7 +19,7 @@
     </nav>
     <div class="topbar-right">
       {% if page == "generate" %}
-      <button id="topbar-generate" class="primary small" type="button" title="Generate (⌘/Ctrl + Enter)" form="generate-form">Generate</button>
+      <button id="topbar-generate" class="primary small" type="button" title="Generate (⌘/Ctrl + Enter)" form="generate-form" disabled>Generate</button>
       {% endif %}
       <span id="worker-status" class="pill muted">idle</span>
       <button id="unload-model" class="ghost small" type="button" title="Free the loaded model's memory now" hidden>Unload</button>

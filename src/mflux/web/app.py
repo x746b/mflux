@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 from pathlib import Path
 
@@ -16,9 +17,10 @@ from fastapi.templating import Jinja2Templates
 from mflux.web.auth import REMEMBER_ME_MAX_AGE, SESSION_COOKIE_NAME, SESSION_MAX_AGE, LoginThrottle, WebAuth
 from mflux.web.chat import PromptChat
 from mflux.web.invocation import Invocation, InvocationError
+from mflux.web.limits import RequestBodyLimitMiddleware
 from mflux.web.network import NetworkPolicy
 from mflux.web.paths import PathGuard, PathRejected
-from mflux.web.runner import JobRunner
+from mflux.web.runner import JobQueueFull, JobRunner
 from mflux.web.schema import FormSchema
 from mflux.web.settings import WebSettings
 
@@ -42,8 +44,13 @@ class WebApp:
         self.settings = settings
         self.auth = WebAuth(settings.secret_key, settings.api_key_hash)
         self.throttle = LoginThrottle()
+        self._auth_slots = asyncio.Semaphore(2)
+        self._auth_tasks: set[asyncio.Task] = set()
         self.guard = PathGuard(settings.output_dir, settings.upload_dir, settings.models_dirs, settings.lora_dirs)
         self.schema = FormSchema()
+        self._commands_lock = threading.Lock()
+        self._discovery_lock = threading.Lock()
+        self._discovery = {"phase": "waiting", "command": None, "completed": 0, "total": 0}
         self.chat = PromptChat()
         self.runner = runner or JobRunner(
             cache_size=settings.cache_size,
@@ -70,6 +77,7 @@ class WebApp:
     def _build(self) -> FastAPI:
         app = FastAPI(title="mflux-web", docs_url=None, redoc_url=None, openapi_url=None, lifespan=self._lifespan)
         app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
+        app.add_middleware(RequestBodyLimitMiddleware, max_upload_mb=self.settings.max_upload_mb)
         app.middleware("http")(self._guard_request)
         self._register_pages(app)
         self._register_settings_api(app)
@@ -92,8 +100,6 @@ class WebApp:
             request.headers.get("host"), self.settings.host, self.settings.allowed_hosts
         ):
             return WebApp._secured(JSONResponse({"detail": "Host not allowed"}, status_code=421))
-        if WebApp._content_length(request) > (self.settings.max_upload_mb + 1) * 1024 * 1024:
-            return WebApp._secured(JSONResponse({"detail": "Request body too large"}, status_code=413))
         if not self.auth_required and WebApp._proxied(request):
             # An unauthenticated server only trusts callers on this machine. A request that
             # came through a proxy is from somewhere else, even if its socket is loopback.
@@ -103,13 +109,22 @@ class WebApp:
         path = request.url.path
         is_public = path in PUBLIC_PATHS or path.startswith("/static/")
         bearer = WebApp._bearer(request)
-        authenticated = self._is_authenticated(request, bearer)
+        authenticated, retry_after = await self._is_authenticated(request, bearer)
+        request.state.authenticated = authenticated
+        if retry_after:
+            return WebApp._secured(
+                JSONResponse(
+                    {"detail": "Too many authentication attempts; try again shortly."},
+                    status_code=429,
+                    headers={"Retry-After": str(retry_after)},
+                )
+            )
         if not is_public and not authenticated:
             if request.method == "GET" and not path.startswith("/api/"):
                 target = "/setup" if self.settings.require_auth and not self.auth.enabled else "/login"
                 return WebApp._secured(RedirectResponse(target, status_code=303))
             return WebApp._secured(JSONResponse({"detail": "Authentication required"}, status_code=401))
-        if request.method in UNSAFE_METHODS and not self._csrf_ok(request, bearer):
+        if request.method in UNSAFE_METHODS and not self._csrf_ok(request, bearer, authenticated):
             return WebApp._secured(JSONResponse({"detail": "CSRF check failed; reload the page"}, status_code=403))
         response = await call_next(request)
         if path.startswith("/api/"):
@@ -118,20 +133,45 @@ class WebApp:
             response.headers["Cache-Control"] = "no-cache"
         return WebApp._secured(response)
 
-    def _is_authenticated(self, request: Request, bearer: str | None) -> bool:
+    async def _is_authenticated(self, request: Request, bearer: str | None) -> tuple[bool, int]:
         if not self.auth_required:
-            return True
+            return True, 0
         if bearer is not None:
-            return self.auth.verify_api_key(bearer)
-        return self.auth.verify_session_token(request.cookies.get(SESSION_COOKIE_NAME))
+            return await self._verify_key(bearer, WebApp._client(request))
+        return self.auth.verify_session_token(request.cookies.get(SESSION_COOKIE_NAME)), 0
 
-    def _csrf_ok(self, request: Request, bearer: str | None) -> bool:
+    async def _verify_key(self, key: str, client: str) -> tuple[bool, int]:
+        retry_after = self.throttle.retry_after(client)
+        if retry_after or self._auth_slots.locked():
+            return False, retry_after or 1
+        await self._auth_slots.acquire()
+        # Cancellation of the request must not free a still-running verification slot.
+        work = asyncio.create_task(asyncio.to_thread(self._check_key, key, client))
+        self._auth_tasks.add(work)
+        work.add_done_callback(self._finish_key_check)
+        return await asyncio.shield(work), 0
+
+    def _check_key(self, key: str, client: str) -> bool:
+        valid = self.auth.verify_api_key(key)
+        if valid:
+            self.throttle.record_success(client)
+        else:
+            self.throttle.record_failure(client)
+        return valid
+
+    def _finish_key_check(self, work: asyncio.Task) -> None:
+        self._auth_tasks.discard(work)
+        self._auth_slots.release()
+        if not work.cancelled():
+            work.exception()
+
+    def _csrf_ok(self, request: Request, bearer: str | None, authenticated: bool) -> bool:
         origin = request.headers.get("origin")
         if origin and origin != "null":
             origin_host = origin.split("://", 1)[-1]
             if origin_host != request.headers.get("host"):
                 return False
-        if bearer is not None and self.auth_required and self.auth.verify_api_key(bearer):
+        if bearer is not None and self.auth_required and authenticated:
             # Scripted clients authenticate per request and never carry a cookie to ride on.
             return True
         return self.auth.verify_csrf(request.cookies.get(SESSION_COOKIE_NAME), request.headers.get(CSRF_HEADER))
@@ -186,11 +226,13 @@ class WebApp:
             if not isinstance(body, dict):
                 raise HTTPException(400, "Invalid chat request.")
             payload = PromptChat.validate(body)
-            key = os.environ.get("OPENAI_API_KEY", "").strip()
+            provider = PromptChat.provider(body)
+            key_name = "OMLX_API_KEY" if provider == "omlx" else "OPENAI_API_KEY"
+            key = os.environ.get(key_name, "").strip()
             if not key:
-                raise HTTPException(503, "Set OPENAI_API_KEY in the server environment and restart mflux-web.")
+                raise HTTPException(503, f"Set {key_name} in the server environment and restart mflux-web.")
             return StreamingResponse(
-                self.chat.stream(payload, key), media_type="application/x-ndjson",
+                self.chat.stream(payload, key, provider), media_type="application/x-ndjson",
                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
             )
 
@@ -214,11 +256,10 @@ class WebApp:
     def _register_auth_api(self, app: FastAPI) -> None:
         @app.get("/api/session")
         def session(request: Request):
-            bearer = WebApp._bearer(request)
             return {
                 "auth_required": self.auth_required,
                 "auth_configured": self.auth.enabled,
-                "authenticated": self._is_authenticated(request, bearer),
+                "authenticated": request.state.authenticated,
                 "csrf": self.auth.csrf_token(request.cookies.get(SESSION_COOKIE_NAME)),
             }
 
@@ -232,11 +273,14 @@ class WebApp:
                 )
             body = await WebApp._json(request)
             api_key = str(body.get("api_key") or "")
-            if not self.auth.enabled or not self.auth.verify_api_key(api_key):
-                self.throttle.record_failure(client)
+            valid, retry_after = await self._verify_key(api_key, client)
+            if retry_after:
+                raise HTTPException(
+                    429, "Too many authentication attempts", headers={"Retry-After": str(retry_after)}
+                )
+            if not valid:
                 logger.warning("Failed login from %s (key fingerprint %s)", client, WebAuth.fingerprint(api_key))
                 raise HTTPException(401, "Invalid API key")
-            self.throttle.record_success(client)
             return self._session_response(bool(body.get("remember")))
 
         @app.post("/api/logout")
@@ -262,14 +306,19 @@ class WebApp:
             return self._session_response(remember=False)
 
     def _register_generation_api(self, app: FastAPI) -> None:
+        @app.get("/api/commands/progress")
+        async def command_progress():
+            with self._discovery_lock:
+                progress = dict(self._discovery)
+            started = progress.pop("started_at", None)
+            finished = progress.pop("finished_at", None)
+            progress["elapsed_seconds"] = round((finished or time.perf_counter()) - started, 1) if started else 0
+            return progress
+
         @app.get("/api/commands")
         def commands():
-            return {
-                "commands": self.schema.commands(),
-                "local_models": self.guard.list_local_models(),
-                "default_model_source": "local" if self.settings.models_dirs else "builtin",
-                "local_loras": self.guard.list_local_loras(),
-            }
+            with self._commands_lock:
+                return self._discover_commands()
 
         @app.get("/api/status")
         def status():
@@ -300,7 +349,10 @@ class WebApp:
                 await asyncio.to_thread(invocation.validate)
             except InvocationError as exc:
                 raise HTTPException(400, str(exc)) from exc
-            job = self.runner.submit(invocation, payload, preview_every=payload.get("preview_every") or 0)
+            try:
+                job = self.runner.submit(invocation, payload, preview_every=payload.get("preview_every") or 0)
+            except JobQueueFull as exc:
+                raise HTTPException(429, str(exc), headers={"Retry-After": "5"}) from exc
             return job.snapshot()
 
         @app.get("/api/jobs")
@@ -352,6 +404,46 @@ class WebApp:
                     await asyncio.sleep(0.25)
 
             return StreamingResponse(stream(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"})
+
+    def _set_discovery_progress(self, **updates) -> None:
+        with self._discovery_lock:
+            self._discovery.update(updates)
+
+    def _discover_commands(self) -> dict:
+        started = time.perf_counter()
+        self._set_discovery_progress(
+            phase="schemas", command=None, completed=0, total=0, started_at=started, finished_at=None
+        )
+
+        def report(command: str, completed: int, total: int) -> None:
+            self._set_discovery_progress(phase="schemas", command=command, completed=completed, total=total + 2)
+
+        try:
+            command_specs = self.schema.commands(progress=report)
+            schemas_done = time.perf_counter()
+            count = len(command_specs)
+            self._set_discovery_progress(phase="models", command=None, completed=count, total=count + 2)
+            local_models = self.guard.list_local_models()
+            models_done = time.perf_counter()
+            self._set_discovery_progress(phase="loras", completed=count + 1)
+            local_loras = self.guard.list_local_loras()
+            finished = time.perf_counter()
+            self._set_discovery_progress(phase="done", completed=count + 2, finished_at=finished)
+        except Exception:  # noqa: BLE001 -- mark failed discovery before preserving the original error
+            self._set_discovery_progress(phase="error", finished_at=time.perf_counter())
+            raise
+        logger.info(
+            "Command discovery: total=%.3fs, schemas=%.3fs (%d commands), "
+            "model scan=%.3fs (%d folders), LoRA scan=%.3fs (%d files)",
+            finished - started, schemas_done - started, count,
+            models_done - schemas_done, len(local_models), finished - models_done, len(local_loras),
+        )
+        return {
+            "commands": command_specs,
+            "local_models": local_models,
+            "default_model_source": "local" if self.settings.models_dirs else "builtin",
+            "local_loras": local_loras,
+        }
 
     def _register_gallery_api(self, app: FastAPI) -> None:
         @app.get("/api/gallery")
@@ -515,13 +607,6 @@ class WebApp:
     @staticmethod
     def _proxied(request: Request) -> bool:
         return any(header in request.headers for header in FORWARDING_HEADERS)
-
-    @staticmethod
-    def _content_length(request: Request) -> int:
-        try:
-            return int(request.headers.get("content-length") or 0)
-        except ValueError:
-            return 0
 
     @staticmethod
     def _client(request: Request) -> str:

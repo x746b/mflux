@@ -3,8 +3,48 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const panel = $("prompt-chat"), input = $("chat-input"), model = $("chat-model");
+  const provider = $("chat-provider");
   let messages = [], config = null, controller = null, opener = null;
   let preferences = MFChatPreferences.read();
+  let pendingPreferences = null;
+  const conversations = {};
+
+  function providerConfig() { return config?.providers[preferences.provider]; }
+
+  function showProvider() {
+    provider.value = preferences.provider;
+    const selected = providerConfig();
+    model.replaceChildren(...(selected?.models || []).map((m) => MF.el("option", { value: m.id, text: m.name })));
+    model.value = preferences.provider === "openai" ? preferences.model : selected?.default_model || "";
+    $("chat-key-status").textContent = selected?.configuration_error || (selected?.configured ? "API key detected on server" : "Configuration missing. See Settings → Prompt assistant for setup.");
+    $("chat-provider-info").textContent = `${preferences.provider === "omlx" ? "oMLX server" : "OpenAI API · API charges apply"}. Messages are sent when you press Send. Each provider has its own chat; both clear on reload.`;
+    busy(Boolean(controller));
+  }
+
+  function applyPreferences(next) {
+    if (next.provider !== preferences.provider) {
+      conversations[preferences.provider] = { messages, draft: input.value, nodes: [...$("chat-messages").childNodes] };
+      const saved = conversations[next.provider];
+      messages = saved?.messages || [];
+      input.value = saved?.draft || "";
+      $("chat-messages").replaceChildren(...(saved?.nodes || []));
+      $("chat-status").textContent = "";
+      error();
+    }
+    preferences = next;
+    if (!next.enabled) panel.hidden = true;
+    showProvider();
+  }
+
+  function syncPreferences() {
+    const next = MFChatPreferences.read();
+    document.querySelectorAll("[data-chat-launcher]").forEach((button) => { button.hidden = !next.enabled; });
+    if (controller) {
+      pendingPreferences = next;
+      if (!next.enabled) panel.hidden = true;
+      controller.abort();
+    } else applyPreferences(next);
+  }
 
   function error(message = "") {
     $("chat-error").textContent = message;
@@ -12,10 +52,11 @@
   }
 
   function busy(active) {
-    $("chat-send").disabled = active || !config?.configured;
+    $("chat-send").disabled = active || !preferences.enabled || !providerConfig()?.configured;
     $("chat-stop").hidden = !active;
     $("chat-clear").disabled = active;
-    model.disabled = active;
+    model.disabled = active || preferences.provider === "omlx";
+    provider.disabled = active;
     input.disabled = active;
     panel.querySelectorAll("[data-chat-action], #chat-use-current").forEach((button) => { button.disabled = active; });
   }
@@ -65,7 +106,7 @@
 
   async function send(event) {
     event.preventDefault();
-    if (controller || !config?.configured) return;
+    if (controller || !preferences.enabled || !providerConfig()?.configured) return;
     const text = input.value.trim();
     if (!text) return;
     const pending = [...messages, { role: "user", content: text }];
@@ -80,7 +121,7 @@
     $("chat-status").textContent = "Thinking…";
     let response = "", completed = false;
     try {
-      await MF.stream("/api/chat", { model: model.value, instructions: preferences.instructions, messages: pending }, controller.signal, (item) => {
+      await MF.stream("/api/chat", { provider: preferences.provider, model: model.value, instructions: preferences.instructions, messages: pending }, controller.signal, (item) => {
         if (item.type === "error") throw new Error(item.message);
         if (item.type === "delta") {
           response += item.text;
@@ -90,7 +131,8 @@
         }
         if (item.type === "done") {
           completed = true;
-          $("chat-status").textContent = `${item.usage.input_tokens} input · ${item.usage.output_tokens} output tokens`;
+          $("chat-status").textContent = item.usage.input_tokens == null || item.usage.output_tokens == null
+            ? "Reply complete." : `${item.usage.input_tokens} input · ${item.usage.output_tokens} output tokens`;
         }
       });
       if (!completed || !response.trim()) throw new Error("No complete reply was received. Please try again.");
@@ -104,12 +146,14 @@
       else reply.article.append(MF.el("small", { class: "hint", text: "Incomplete reply · excluded from conversation context" }));
     } finally {
       controller = null;
+      if (pendingPreferences) { applyPreferences(pendingPreferences); pendingPreferences = null; }
       busy(false);
-      input.focus();
+      if (!panel.hidden) input.focus();
     }
   }
 
   async function open() {
+    if (!MFChatPreferences.read().enabled) return;
     opener = document.activeElement;
     panel.hidden = false;
     input.focus();
@@ -117,16 +161,13 @@
     try {
       await MF.ready;
       config = await MF.api("/api/chat/config");
-      preferences = MFChatPreferences.read();
-      model.replaceChildren(...config.models.map((m) => MF.el("option", { value: m.id, text: m.name })));
-      model.value = preferences.model;
-      $("chat-key-status").textContent = config.configured ? "API key detected on server" : "API key missing. See Settings → Prompt assistant for setup.";
-      busy(false);
+      applyPreferences(MFChatPreferences.read());
     } catch (exc) { error(exc.message); }
   }
 
   function close() { panel.hidden = true; opener?.focus(); }
   window.addEventListener("mflux-open-chat", open);
+  window.addEventListener("mflux-chat-preferences", syncPreferences);
   $("chat-close").addEventListener("click", close);
   panel.addEventListener("keydown", (event) => { if (event.key === "Escape") close(); });
   $("chat-form").addEventListener("submit", send);
@@ -142,6 +183,9 @@
   model.addEventListener("change", () => {
     preferences.model = model.value;
     if (!MFChatPreferences.save(preferences)) MF.toast("Model selected for this page; browser storage is unavailable.");
+  });
+  provider.addEventListener("change", () => {
+    if (!MFChatPreferences.save({ ...preferences, provider: provider.value })) MF.toast("Provider selected for this page; browser storage is unavailable.");
   });
   window.addEventListener("pagehide", () => controller?.abort());
 })();

@@ -111,8 +111,9 @@
     const wide = field.widget === "textarea" || field.flag === "--base-model" ? " wide" : "";
     const label = el("label", { class: "label", for: id }, el("span", { text: field.label }), status);
     const heading = field.flag === "--prompt"
-      ? el("div", { class: "row-between" }, label, el("button", {
-        type: "button", class: "ghost small", text: "Prompt assistant", "aria-controls": "prompt-chat",
+      ? el("div", { class: "row-between prompt-heading" }, label, el("button", {
+        type: "button", class: "ghost prompt-assistant-launcher", text: "Prompt assistant", "aria-controls": "prompt-chat",
+        "data-chat-launcher": true, hidden: !MFChatPreferences.read().enabled,
         onclick: () => window.dispatchEvent(new Event("mflux-open-chat")),
       })) : label;
     return el("div", { class: `field${wide}`, "data-field": field.flag }, heading, input, field.widget === "textarea" ? null : hint);
@@ -667,9 +668,41 @@
     window.addEventListener("beforeunload", saveForm);
   }
 
+  async function loadCommands() {
+    const started = Date.now();
+    let stopped = false, polling = false;
+    async function update() {
+      $("form-loading-message").textContent = `Loading models and controls… (${Math.floor((Date.now() - started) / 1000)}s)`;
+      if (polling) return;
+      polling = true;
+      try {
+        const progress = await MF.api("/api/commands/progress");
+        if (stopped) return;
+        const labels = {
+          waiting: "Preparing command options…",
+          schemas: progress.command ? `Loading ${prettyCommand(progress.command)} options (${progress.completed + 1}/${progress.total - 2})…` : "Preparing command options…",
+          models: "Scanning local model folders…",
+          loras: "Scanning local LoRA files…",
+          done: "Preparing the form…",
+          error: "Loading failed. Waiting for error details…",
+        };
+        $("form-loading-hint").textContent = labels[progress.phase] || "Preparing command options…";
+        if (progress.total) {
+          $("form-loading-progress").max = progress.total;
+          $("form-loading-progress").value = progress.completed;
+        }
+      } catch { /* command loading can continue if progress reporting is unavailable */ }
+      finally { polling = false; }
+    }
+    const timer = setInterval(update, 750);
+    update();
+    try { return await MF.api("/api/commands"); }
+    finally { stopped = true; clearInterval(timer); }
+  }
+
   async function start() {
     await MF.ready;
-    const data = await MF.api("/api/commands");
+    const data = await loadCommands();
     state.commands = data.commands;
     state.localModels = data.local_models;
     state.defaultModelSource = data.default_model_source || "builtin";
@@ -695,14 +728,29 @@
     const lastCommand = storage("get", LAST_COMMAND_KEY);
     const initial = reuse?.command && commandSpec(reuse.command) ? reuse
       : storage("get", `${STORAGE_PREFIX}form:${lastCommand}`) || null;
+    if (!state.commands.some((c) => c.available)) throw new Error("No image-generation commands are available.");
     if (initial && commandSpec(initial.command)) applyPayload(initial);
     else renderCommand((commandSpec("mflux-generate-qwen-2.1") || state.commands.find((c) => c.available)).command);
     if (reuse) MF.toast("Settings loaded from gallery");
+
+    $("generate-controls").disabled = false;
+    $("topbar-generate").disabled = false;
+    $("generate-form").setAttribute("aria-busy", "false");
+    $("form-loading").hidden = true;
 
     refreshJobs();
     const running = (await MF.api("/api/jobs")).jobs.find((j) => j.status === "running" || j.status === "queued");
     if (running) track(running);
   }
 
-  start().catch((exc) => showError(exc.message));
+  $("form-loading-retry").addEventListener("click", () => window.location.reload());
+  start().catch((exc) => {
+    if ($("generate-controls").disabled) {
+      $("generate-form").setAttribute("aria-busy", "false");
+      $("form-loading-message").textContent = "Could not load models and controls.";
+      $("form-loading-hint").textContent = exc.message;
+      $("form-loading-progress").hidden = true;
+      $("form-loading-retry").hidden = false;
+    } else showError(exc.message);
+  });
 })();

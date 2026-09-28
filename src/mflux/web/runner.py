@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 class JobCancelled(Exception): ...
 
 
+class JobQueueFull(ValueError): ...
+
+
 @dataclass
 class Job:
     invocation: Invocation
@@ -146,6 +149,7 @@ class WebProgressCallback:
 
 class JobRunner:
     MAX_JOBS_KEPT = 200
+    MAX_PENDING_JOBS = 16
     # Queue sentinel: model memory may only be touched on the worker thread that owns MLX.
     UNLOAD = "unload"
     GB = 1024**3
@@ -156,7 +160,8 @@ class JobRunner:
         self.current_job: Job | None = None
         self.battery_saver = None
         self._jobs: OrderedDict[str, Job] = OrderedDict()
-        self._queue: "queue.Queue[Job | str | None]" = queue.Queue()
+        self._queue: "queue.Queue[Job | str | None]" = queue.Queue(maxsize=self.MAX_PENDING_JOBS)
+        self._stopping = threading.Event()
         self._models: OrderedDict[tuple, object] = OrderedDict()
         self._jobs_lock = threading.Lock()
         self._thread = threading.Thread(target=self._work, name="mflux-web-worker", daemon=True)
@@ -168,23 +173,34 @@ class JobRunner:
         self._thread.start()
 
     def stop(self) -> None:
+        self._stopping.set()
         for job in self.jobs():
             self.cancel(job.id)
-        self._queue.put(None)
+        with self._jobs_lock:
+            try:
+                self._queue.put_nowait(None)
+            except queue.Full:
+                pass
         if self._thread.is_alive():
             self._thread.join(timeout=5)
 
     def submit(self, invocation: Invocation, payload: dict, preview_every: int = 0) -> Job:
         job = Job(invocation=invocation, payload=payload, preview_every=max(int(preview_every or 0), 0))
         with self._jobs_lock:
+            if self._stopping.is_set():
+                raise JobQueueFull("The generation worker is stopping.")
+            if self._queue.full():
+                raise JobQueueFull(
+                    f"The generation queue is full (up to {self.MAX_PENDING_JOBS} pending jobs). Try again shortly."
+                )
             self._jobs[job.id] = job
-            while len(self._jobs) > JobRunner.MAX_JOBS_KEPT:
-                oldest_id, oldest = next(iter(self._jobs.items()))
-                if not oldest.finished:
+            for oldest_id, oldest in list(self._jobs.items()):
+                if len(self._jobs) <= JobRunner.MAX_JOBS_KEPT:
                     break
-                self._jobs.pop(oldest_id)
-        job.emit("queued", position=self.queue_position(job))
-        self._queue.put(job)
+                if oldest.finished:
+                    self._jobs.pop(oldest_id)
+            job.emit("queued", position=sum(j.status == "queued" for j in self._jobs.values()))
+            self._queue.put_nowait(job)
         return job
 
     def get(self, job_id: str) -> Job | None:
@@ -226,10 +242,11 @@ class JobRunner:
         return uploads
 
     def request_unload(self) -> bool:
-        if not self._models:
-            return False
-        self._queue.put(JobRunner.UNLOAD)
-        return True
+        with self._jobs_lock:
+            if not self._models or self._stopping.is_set() or self._queue.full():
+                return False
+            self._queue.put_nowait(JobRunner.UNLOAD)
+            return True
 
     def queue_position(self, job: Job) -> int:
         waiting = [j for j in self.jobs() if j.status == "queued"]
@@ -263,6 +280,9 @@ class JobRunner:
 
         self.memory.install()
         while True:
+            if self._stopping.is_set():
+                self._unload_all("server stopped")
+                return
             try:
                 job = self._queue.get(timeout=self._seconds_until_idle_unload())
             except queue.Empty:

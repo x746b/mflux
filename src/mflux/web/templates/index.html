@@ -2,7 +2,14 @@
 {% block title %}Generate · mflux{% endblock %}
 {% block main_class %}generate-layout{% endblock %}
 {% block content %}
-<form id="generate-form" class="panel form-panel" autocomplete="off" novalidate>
+<form id="generate-form" class="panel form-panel" autocomplete="off" novalidate aria-busy="true">
+  <div id="form-loading" class="loading-status" role="status" aria-live="polite">
+    <strong id="form-loading-message">Loading models and controls…</strong>
+    <small id="form-loading-hint" class="hint">The first load after starting the server may take a moment.</small>
+    <progress id="form-loading-progress" aria-label="Loading command options and local files"></progress>
+    <button type="button" id="form-loading-retry" class="ghost small" hidden>Reload page</button>
+  </div>
+  <fieldset id="generate-controls" disabled>
   <section class="field-group grid-2">
     <label class="field">
       <span class="label">Model family</span>
@@ -98,6 +105,7 @@
     <button type="button" id="reset-form" class="ghost">Reset</button>
   </div>
   <small class="hint">Generating while another job runs adds your request to the queue.</small>
+  </fieldset>
   <p id="form-error" class="error" hidden></p>
   <p id="form-warnings" class="warning" hidden></p>
 </form>

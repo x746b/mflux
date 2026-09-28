@@ -111,6 +111,7 @@ class QuietAccessLog(logging.Filter):
     # The page polls status and loads thumbnails constantly; only --log-level debug shows them.
     NOISY_PREFIXES = (
         "/api/status",
+        "/api/commands/progress",
         "/api/session",
         "/api/jobs",
         "/api/images/",

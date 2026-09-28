@@ -3,7 +3,8 @@
     <h2 id="chat-title">Prompt assistant</h2>
     <button type="button" id="chat-close" class="ghost small" aria-label="Close prompt assistant">Close</button>
   </div>
-  <p class="hint">OpenAI · Messages are sent when you press Send. Chat stays on this page and clears on reload.</p>
+  <p class="hint" id="chat-provider-info">Messages are sent when you press Send. Chat clears on reload.</p>
+  <label class="field"><span class="label">Provider</span><select id="chat-provider"><option value="openai">OpenAI</option><option value="omlx">oMLX</option></select></label>
   <label class="field"><span class="label">Chat model</span><select id="chat-model" aria-label="Chat model"></select></label>
   <p id="chat-key-status" class="hint" role="status">Checking configuration…</p>
   <div id="chat-messages" class="chat-messages" role="log" aria-label="Prompt conversation" aria-live="polite"></div>

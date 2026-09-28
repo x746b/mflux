@@ -4,13 +4,23 @@
 {% block content %}
 <h1>Settings</h1>
 <section class="panel" aria-labelledby="assistant-title">
-  <h2 id="assistant-title">Prompt assistant · OpenAI</h2>
-  <p id="openai-status" class="hint" role="status">Checking API key…</p>
-  <label class="field"><span class="label">Default chat model</span><select id="assistant-model"><option value="gpt-6-luna">GPT-6 Luna</option><option value="gpt-6-sol">GPT-6 Sol</option></select></label>
+  <h2 id="assistant-title">Prompt assistant</h2>
+  <label class="check"><input type="checkbox" id="assistant-enabled" role="switch" checked><span>Enable prompt assistant</span></label>
+  <p class="hint">Turning this off hides the assistant button and stops any active reply in this browser.</p>
+  <label class="field"><span class="label">Provider</span><select id="assistant-provider"><option value="openai">OpenAI</option><option value="omlx">oMLX</option></select></label>
+  <p id="assistant-provider-status" class="hint" role="status">Checking configuration…</p>
+  <label class="field" id="assistant-openai-model"><span class="label">Default chat model</span><select id="assistant-model"><option value="gpt-6-luna">GPT-6 Luna</option><option value="gpt-6-sol">GPT-6 Sol</option></select></label>
+  <p id="assistant-omlx-model" class="hint" hidden></p>
   <label class="field"><span class="label">Style preferences</span><textarea id="assistant-instructions" rows="4" maxlength="4000" placeholder="For example: prefer cinematic photography, natural lighting, and concise prompts."></textarea></label>
   <button type="button" class="ghost small" id="assistant-save">Save assistant preferences</button>
   <p id="assistant-feedback" class="hint" role="status"></p>
-  <p class="hint">Preferences are saved in this browser. Chat uses your OpenAI API billing and sends only messages you submit; generated images are not attached.</p>
+  <p class="hint">Preferences are saved in this browser. OpenAI uses your API billing; oMLX sends messages to your configured inference server. Only messages you submit are sent; generated images are not attached.</p>
+  <details>
+    <summary>Set up oMLX</summary>
+    <p>Export <code>OMLX_API_KEY</code> and <code>OMLX_MFLUX_MODEL</code> in the environment that starts mflux-web. Use the model name shown in oMLX. The default API base is <code>http://127.0.0.1:8000/v1</code>; set <code>OMLX_BASE_URL</code> if your server uses another address.</p>
+    <p>Servers on another machine must use HTTPS with a valid certificate. Plain HTTP is supported only for loopback addresses and <code>localhost</code>.</p>
+    <p>You can put these exports in <code>~/.zshrc</code>, open a new terminal, and restart mflux-web there. Configuration status checks do not contact oMLX or load a model. The same style preferences apply to both providers.</p>
+  </details>
   <details>
     <summary>Set up the OpenAI API key</summary>
     <p>Export <code>OPENAI_API_KEY</code> in the environment that starts <code>mflux-web</code>. For a terminal launch, you can add <code>export OPENAI_API_KEY="your-api-key"</code> to <code>~/.zshrc</code>, open a new terminal, and restart mflux-web there.</p>
